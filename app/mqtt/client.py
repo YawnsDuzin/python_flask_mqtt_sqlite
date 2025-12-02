@@ -1,6 +1,7 @@
 """
 MQTT 클라이언트 모듈
 MQTT 브로커와의 연결, 구독, 발행을 관리합니다.
+환경/가스 센서 복합 데이터 지원
 """
 
 import json
@@ -12,8 +13,13 @@ from datetime import datetime
 
 import paho.mqtt.client as mqtt
 
-from app.parsers import parse_sensor_data, ParsedData
-from app.models import get_db, Sensor, SensorData, MqttLog
+from app.parsers import (
+    parse_mqtt_data,
+    is_environment_data,
+    ParsedEnvironmentData,
+    ParsedData
+)
+from app.models import get_db, Site, Device, EnvironmentData, MqttLog, SENSOR_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +29,7 @@ class MQTTClient:
     MQTT 클라이언트 클래스
 
     브로커 연결, 메시지 구독/발행, 자동 재연결을 관리합니다.
+    환경/가스 복합 센서 데이터를 지원합니다.
     """
 
     def __init__(
@@ -195,19 +202,19 @@ class MQTTClient:
             logger.error(f"메시지 발행 오류: {e}")
             return False
 
-    def publish_processed_data(self, sensor_id: str, data_type: str, value: float, unit: str):
+    def publish_processed_data(self, device_id: str, data_type: str, value: float, unit: str):
         """
         가공된 데이터 발행
 
         Args:
-            sensor_id: 센서 ID
+            device_id: 장치 ID
             data_type: 데이터 타입 (avg, min, max 등)
             value: 값
             unit: 단위
         """
-        topic = f"processed/{sensor_id}/{data_type}"
+        topic = f"processed/{device_id}/{data_type}"
         payload = {
-            'sensor_id': sensor_id,
+            'device_id': device_id,
             'type': data_type,
             'value': round(value, 2),
             'unit': unit,
@@ -266,23 +273,16 @@ class MQTTClient:
         logger.debug(f"메시지 수신: {topic} (QoS: {qos})")
 
         try:
-            # 데이터 파싱
-            parsed = parse_sensor_data(payload, topic)
+            # 데이터 파싱 (환경 센서 또는 단일 센서 자동 감지)
+            parsed = parse_mqtt_data(payload, topic, qos)
 
             if parsed:
-                # 데이터베이스 저장
-                self._save_to_database(parsed, topic, qos, payload)
-
-                # SocketIO로 실시간 전송
-                if self.socketio:
-                    self.socketio.emit('sensor_data', {
-                        'sensor_id': parsed.sensor_id,
-                        'sensor_type': parsed.sensor_type,
-                        'value': parsed.value,
-                        'unit': parsed.unit,
-                        'timestamp': parsed.timestamp,
-                        'topic': topic
-                    })
+                # 데이터 타입에 따라 처리
+                if isinstance(parsed, ParsedEnvironmentData):
+                    self._save_environment_data(parsed, topic, qos, payload)
+                else:
+                    # 단일 센서 데이터 (기존 로직)
+                    logger.warning("단일 센서 데이터 포맷은 더 이상 지원되지 않습니다.")
 
             # 외부 핸들러 호출
             for handler in self._message_handlers:
@@ -305,41 +305,78 @@ class MQTTClient:
 
     # ===== 유틸리티 메소드 =====
 
-    def _save_to_database(
+    def _save_environment_data(
         self,
-        parsed: ParsedData,
+        parsed: ParsedEnvironmentData,
         topic: str,
         qos: int,
         raw_payload: str
     ):
-        """파싱된 데이터를 데이터베이스에 저장"""
+        """환경 센서 데이터를 데이터베이스에 저장"""
         try:
             db = get_db()
 
-            # 센서 정보 생성/업데이트
-            sensor = Sensor(
-                sensor_id=parsed.sensor_id,
-                sensor_type=parsed.sensor_type
+            # 현장 정보 생성/업데이트
+            site = Site(
+                site_code=parsed.site_code,
+                h_cd=parsed.h_cd,
+                s_cd=parsed.s_cd
             )
-            db.create_sensor(sensor)
+            db.create_site(site)
 
-            # 센서 데이터 저장
-            sensor_data = SensorData(
-                sensor_id=parsed.sensor_id,
-                sensor_type=parsed.sensor_type,
-                value=parsed.value,
-                unit=parsed.unit,
-                raw_payload=raw_payload,
-                topic=topic,
-                qos=qos,
-                timestamp=parsed.timestamp
+            # 장치 정보 생성/업데이트
+            device = Device(
+                device_id=parsed.device_id,
+                site_code=parsed.site_code,
+                dv_no=parsed.dv_no
             )
-            db.save_sensor_data(sensor_data)
+            db.create_device(device)
 
-            logger.debug(f"데이터 저장: {parsed.sensor_id} = {parsed.value}")
+            # 환경 데이터 저장
+            env_data = parsed.to_environment_data(qos)
+            db.save_environment_data(env_data)
+
+            logger.debug(
+                f"환경 데이터 저장: {parsed.device_id} "
+                f"(온도: {parsed.temp}, 습도: {parsed.humi}, CO2: {parsed.co2})"
+            )
+
+            # SocketIO로 실시간 전송
+            if self.socketio:
+                self._emit_environment_data(parsed, topic)
 
         except Exception as e:
-            logger.error(f"데이터베이스 저장 오류: {e}")
+            logger.error(f"환경 데이터 저장 오류: {e}")
+
+    def _emit_environment_data(self, parsed: ParsedEnvironmentData, topic: str):
+        """환경 데이터를 SocketIO로 전송"""
+        if not self.socketio:
+            return
+
+        # 센서 데이터를 개별적으로 전송
+        sensor_data = {
+            'device_id': parsed.device_id,
+            'site_code': parsed.site_code,
+            'h_cd': parsed.h_cd,
+            's_cd': parsed.s_cd,
+            'dv_no': parsed.dv_no,
+            'check_time': parsed.check_time,
+            'topic': topic,
+            'sensors': {}
+        }
+
+        # 각 센서별 데이터 추가
+        for sensor_type, info in SENSOR_TYPES.items():
+            value = getattr(parsed, sensor_type, None)
+            if value is not None:
+                sensor_data['sensors'][sensor_type] = {
+                    'value': value,
+                    'unit': info['unit'],
+                    'name': info['name'],
+                    'name_en': info['name_en']
+                }
+
+        self.socketio.emit('environment_data', sensor_data)
 
     def _log_mqtt_event(self, event_type: str, topic: str = None, message: str = None):
         """MQTT 이벤트 로깅"""

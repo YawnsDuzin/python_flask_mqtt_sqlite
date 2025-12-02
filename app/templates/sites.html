@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}현장 목록 - 환경 센서 모니터링{% endblock %}
+
+{% block content %}
+<div class="sites-page">
+    <header class="page-header">
+        <h1>현장 목록</h1>
+        <div class="header-actions">
+            <input type="text" id="search-input" placeholder="현장 검색..." class="search-input">
+        </div>
+    </header>
+
+    <div class="sites-grid" id="sites-grid">
+        {% if sites %}
+            {% for site in sites %}
+            <div class="site-card" data-site-code="{{ site.h_cd }}{{ site.s_cd }}">
+                <div class="site-card-header">
+                    <span class="site-code-badge">{{ site.h_cd }}{{ site.s_cd }}</span>
+                    <span class="site-status {{ 'active' if site.is_active else 'inactive' }}">
+                        {{ '활성' if site.is_active else '비활성' }}
+                    </span>
+                </div>
+                <div class="site-card-body">
+                    <h3>{{ site.name or site.h_cd + site.s_cd }}</h3>
+                    <p class="site-description">{{ site.description or '설명 없음' }}</p>
+                    <p class="site-codes">
+                        <span>현장코드: {{ site.h_cd }}</span>
+                        <span>세부코드: {{ site.s_cd }}</span>
+                    </p>
+                    <p class="site-created">등록: {{ site.created_at[:10] if site.created_at else '-' }}</p>
+                </div>
+                <div class="site-card-footer">
+                    <a href="{{ url_for('main.site_detail', site_code=site.h_cd + site.s_cd) }}" class="btn btn-small">상세 보기</a>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <p class="no-data-message">등록된 현장이 없습니다.</p>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('search-input');
+    const sitesGrid = document.getElementById('sites-grid');
+    const siteCards = sitesGrid.querySelectorAll('.site-card');
+
+    function filterSites() {
+        const searchTerm = searchInput.value.toLowerCase();
+
+        siteCards.forEach(card => {
+            const siteCode = card.dataset.siteCode.toLowerCase();
+            const siteName = card.querySelector('h3').textContent.toLowerCase();
+
+            const matches = siteCode.includes(searchTerm) || siteName.includes(searchTerm);
+            card.style.display = matches ? 'block' : 'none';
+        });
+    }
+
+    searchInput.addEventListener('input', filterSites);
+});
+</script>
+{% endblock %}

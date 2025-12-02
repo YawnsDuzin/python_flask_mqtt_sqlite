@@ -7,10 +7,11 @@ from .database import (
     get_db,
     close_db,
     init_db,
-    Sensor,
-    SensorData,
-    ProcessedData,
-    MqttLog
+    Site,
+    Device,
+    EnvironmentData,
+    MqttLog,
+    SENSOR_TYPES
 )
 
 __all__ = [
@@ -18,8 +19,9 @@ __all__ = [
     'get_db',
     'close_db',
     'init_db',
-    'Sensor',
-    'SensorData',
-    'ProcessedData',
-    'MqttLog'
+    'Site',
+    'Device',
+    'EnvironmentData',
+    'MqttLog',
+    'SENSOR_TYPES'
 ]

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}장치 목록 - 환경 센서 모니터링{% endblock %}
+
+{% block content %}
+<div class="devices-page">
+    <header class="page-header">
+        <h1>장치 목록</h1>
+        <div class="header-actions">
+            <input type="text" id="search-input" placeholder="장치 검색..." class="search-input">
+        </div>
+    </header>
+
+    <div class="devices-grid" id="devices-grid">
+        {% if devices %}
+            {% for device in devices %}
+            <div class="device-card" data-device-no="{{ device.device_no }}" data-site-code="{{ device.site_code }}">
+                <div class="device-card-header">
+                    <span class="device-no-badge">{{ device.device_no }}</span>
+                    <span class="device-status {{ 'active' if device.is_active else 'inactive' }}">
+                        {{ '활성' if device.is_active else '비활성' }}
+                    </span>
+                </div>
+                <div class="device-card-body">
+                    <h3>{{ device.name or device.device_no }}</h3>
+                    <p class="device-site">현장: {{ device.site_code }}</p>
+                    <p class="device-description">{{ device.description or '설명 없음' }}</p>
+                    <p class="device-created">등록: {{ device.created_at[:10] if device.created_at else '-' }}</p>
+                </div>
+                <div class="device-card-footer">
+                    <a href="{{ url_for('main.device_detail', device_no=device.device_no) }}" class="btn btn-small">상세 보기</a>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <p class="no-data-message">등록된 장치가 없습니다.</p>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('search-input');
+    const devicesGrid = document.getElementById('devices-grid');
+    const deviceCards = devicesGrid.querySelectorAll('.device-card');
+
+    function filterDevices() {
+        const searchTerm = searchInput.value.toLowerCase();
+
+        deviceCards.forEach(card => {
+            const deviceNo = card.dataset.deviceNo.toLowerCase();
+            const siteCode = card.dataset.siteCode.toLowerCase();
+            const deviceName = card.querySelector('h3').textContent.toLowerCase();
+
+            const matches = deviceNo.includes(searchTerm) ||
+                          siteCode.includes(searchTerm) ||
+                          deviceName.includes(searchTerm);
+            card.style.display = matches ? 'block' : 'none';
+        });
+    }
+
+    searchInput.addEventListener('input', filterDevices);
+});
+</script>
+{% endblock %}

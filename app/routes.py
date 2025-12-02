@@ -1,13 +1,14 @@
 """
 Flask 라우트 모듈
 웹 페이지 및 REST API 엔드포인트를 정의합니다.
+환경 센서 (가스, 온도, 습도, 미세먼지 등) 데이터를 다룹니다.
 """
 
 import logging
 from datetime import datetime
 from flask import Blueprint, render_template, jsonify, request
 
-from app.models import get_db
+from app.models import get_db, SENSOR_TYPES
 from app.mqtt import get_mqtt_client
 
 logger = logging.getLogger(__name__)
@@ -22,33 +23,57 @@ api_bp = Blueprint('api', __name__)
 @main_bp.route('/')
 def index():
     """메인 대시보드 페이지"""
-    return render_template('dashboard.html')
+    return render_template('dashboard.html', sensor_types=SENSOR_TYPES)
 
 
-@main_bp.route('/sensors')
-def sensors_page():
-    """센서 목록 페이지"""
+@main_bp.route('/sites')
+def sites_page():
+    """현장 목록 페이지"""
     db = get_db()
-    sensors = db.get_all_sensors()
-    return render_template('sensors.html', sensors=sensors)
+    sites = db.get_all_sites()
+    return render_template('sites.html', sites=sites)
 
 
-@main_bp.route('/sensors/<sensor_id>')
-def sensor_detail(sensor_id):
-    """센서 상세 페이지"""
+@main_bp.route('/sites/<site_code>')
+def site_detail(site_code):
+    """현장 상세 페이지"""
     db = get_db()
-    sensor = db.get_sensor(sensor_id)
-    if not sensor:
-        return render_template('error.html', message='센서를 찾을 수 없습니다.'), 404
+    site = db.get_site(site_code)
+    if not site:
+        return render_template('error.html', message='현장을 찾을 수 없습니다.'), 404
 
-    stats = db.get_sensor_stats(sensor_id)
-    recent_data = db.get_sensor_data(sensor_id=sensor_id, limit=50)
+    devices = db.get_devices_by_site(site_code)
+    return render_template(
+        'site_detail.html',
+        site=site,
+        devices=devices,
+        sensor_types=SENSOR_TYPES
+    )
+
+
+@main_bp.route('/devices')
+def devices_page():
+    """장치 목록 페이지"""
+    db = get_db()
+    devices = db.get_all_devices()
+    return render_template('devices.html', devices=devices, sensor_types=SENSOR_TYPES)
+
+
+@main_bp.route('/devices/<device_no>')
+def device_detail(device_no):
+    """장치 상세 페이지"""
+    db = get_db()
+    device = db.get_device(device_no)
+    if not device:
+        return render_template('error.html', message='장치를 찾을 수 없습니다.'), 404
+
+    recent_data = db.get_environment_data(device_no=device_no, limit=100)
 
     return render_template(
-        'sensor_detail.html',
-        sensor=sensor,
-        stats=stats,
-        recent_data=recent_data
+        'device_detail.html',
+        device=device,
+        recent_data=recent_data,
+        sensor_types=SENSOR_TYPES
     )
 
 
@@ -81,66 +106,133 @@ def health_check():
     })
 
 
-@api_bp.route('/sensors')
-def get_sensors():
-    """모든 센서 목록 조회 API"""
+@api_bp.route('/sensor-types')
+def get_sensor_types():
+    """센서 타입 목록 API"""
+    return api_response(True, {
+        'sensor_types': SENSOR_TYPES
+    })
+
+
+# ===== 현장(Site) API =====
+
+@api_bp.route('/sites')
+def get_sites():
+    """현장 목록 조회 API"""
     db = get_db()
-    active_only = request.args.get('active', 'false').lower() == 'true'
-    sensors = db.get_all_sensors(active_only=active_only)
+    sites = db.get_all_sites()
 
     return api_response(True, {
-        'sensors': [
+        'sites': [
             {
-                'sensor_id': s.sensor_id,
-                'sensor_type': s.sensor_type,
-                'location': s.location,
+                'h_cd': s.h_cd,
+                's_cd': s.s_cd,
+                'name': s.name,
+                'description': s.description,
                 'is_active': s.is_active,
                 'created_at': s.created_at
             }
-            for s in sensors
+            for s in sites
         ],
-        'count': len(sensors)
+        'count': len(sites)
     })
 
 
-@api_bp.route('/sensors/<sensor_id>')
-def get_sensor(sensor_id):
-    """특정 센서 정보 조회 API"""
+@api_bp.route('/sites/<site_code>')
+def get_site(site_code):
+    """특정 현장 정보 조회 API"""
     db = get_db()
-    sensor = db.get_sensor(sensor_id)
+    site = db.get_site(site_code)
 
-    if not sensor:
-        return api_response(False, message='센서를 찾을 수 없습니다.', status_code=404)
+    if not site:
+        return api_response(False, message='현장을 찾을 수 없습니다.', status_code=404)
 
-    stats = db.get_sensor_stats(sensor_id)
+    devices = db.get_devices_by_site(site_code)
 
     return api_response(True, {
-        'sensor': {
-            'sensor_id': sensor.sensor_id,
-            'sensor_type': sensor.sensor_type,
-            'location': sensor.location,
-            'description': sensor.description,
-            'is_active': sensor.is_active,
-            'created_at': sensor.created_at,
-            'updated_at': sensor.updated_at
+        'site': {
+            'h_cd': site.h_cd,
+            's_cd': site.s_cd,
+            'name': site.name,
+            'description': site.description,
+            'is_active': site.is_active,
+            'created_at': site.created_at,
+            'updated_at': site.updated_at
         },
-        'stats': stats
+        'devices': [
+            {
+                'device_no': d.device_no,
+                'name': d.name,
+                'is_active': d.is_active
+            }
+            for d in devices
+        ]
     })
 
 
-@api_bp.route('/sensors/<sensor_id>/data')
-def get_sensor_data(sensor_id):
-    """센서 데이터 조회 API (필터링 지원)"""
+# ===== 장치(Device) API =====
+
+@api_bp.route('/devices')
+def get_devices():
+    """장치 목록 조회 API"""
+    db = get_db()
+    site_code = request.args.get('site')
+
+    if site_code:
+        devices = db.get_devices_by_site(site_code)
+    else:
+        devices = db.get_all_devices()
+
+    return api_response(True, {
+        'devices': [
+            {
+                'device_no': d.device_no,
+                'site_code': d.site_code,
+                'name': d.name,
+                'description': d.description,
+                'is_active': d.is_active,
+                'created_at': d.created_at
+            }
+            for d in devices
+        ],
+        'count': len(devices)
+    })
+
+
+@api_bp.route('/devices/<device_no>')
+def get_device(device_no):
+    """특정 장치 정보 조회 API"""
+    db = get_db()
+    device = db.get_device(device_no)
+
+    if not device:
+        return api_response(False, message='장치를 찾을 수 없습니다.', status_code=404)
+
+    return api_response(True, {
+        'device': {
+            'device_no': device.device_no,
+            'site_code': device.site_code,
+            'name': device.name,
+            'description': device.description,
+            'is_active': device.is_active,
+            'created_at': device.created_at,
+            'updated_at': device.updated_at
+        }
+    })
+
+
+@api_bp.route('/devices/<device_no>/data')
+def get_device_data(device_no):
+    """장치의 환경 데이터 조회 API"""
     db = get_db()
 
-    # 쿼리 파라미터
     limit = min(int(request.args.get('limit', 100)), 1000)
     offset = int(request.args.get('offset', 0))
     start_time = request.args.get('start')
     end_time = request.args.get('end')
 
-    data = db.get_sensor_data(
-        sensor_id=sensor_id,
+    data = db.get_environment_data(
+        device_no=device_no,
         start_time=start_time,
         end_time=end_time,
         limit=limit,
@@ -148,13 +240,25 @@ def get_sensor_data(sensor_id):
     )
 
     return api_response(True, {
-        'sensor_id': sensor_id,
+        'device_no': device_no,
         'data': [
             {
                 'id': d.id,
-                'value': d.value,
-                'unit': d.unit,
                 'timestamp': d.timestamp,
+                'o2': d.o2,
+                'no2': d.no2,
+                'co': d.co,
+                'co2': d.co2,
+                'h2s': d.h2s,
+                'ch4': d.ch4,
+                'ch2o': d.ch2o,
+                'o3': d.o3,
+                'pm25': d.pm25,
+                'pm10': d.pm10,
+                'temp': d.temp,
+                'humi': d.humi,
+                'voc': d.voc,
+                'pm1': d.pm1,
                 'received_at': d.received_at
             }
             for d in data
@@ -165,9 +269,11 @@ def get_sensor_data(sensor_id):
     })
 
 
+# ===== 환경 데이터 API =====
+
 @api_bp.route('/data/latest')
 def get_latest_data():
-    """최신 데이터 조회 API"""
+    """최신 환경 데이터 조회 API"""
     db = get_db()
     limit = min(int(request.args.get('limit', 10)), 100)
 
@@ -176,11 +282,24 @@ def get_latest_data():
     return api_response(True, {
         'data': [
             {
-                'sensor_id': d.sensor_id,
-                'sensor_type': d.sensor_type,
-                'value': d.value,
-                'unit': d.unit,
+                'id': d.id,
+                'device_no': d.device_no,
+                'site_code': d.site_code,
                 'timestamp': d.timestamp,
+                'o2': d.o2,
+                'no2': d.no2,
+                'co': d.co,
+                'co2': d.co2,
+                'h2s': d.h2s,
+                'ch4': d.ch4,
+                'ch2o': d.ch2o,
+                'o3': d.o3,
+                'pm25': d.pm25,
+                'pm10': d.pm10,
+                'temp': d.temp,
+                'humi': d.humi,
+                'voc': d.voc,
+                'pm1': d.pm1,
                 'received_at': d.received_at
             }
             for d in data
@@ -189,11 +308,11 @@ def get_latest_data():
     })
 
 
-@api_bp.route('/data/latest-by-sensor')
-def get_latest_by_sensor():
-    """센서별 최신 데이터 조회 API"""
+@api_bp.route('/data/latest-by-device')
+def get_latest_by_device():
+    """장치별 최신 데이터 조회 API"""
     db = get_db()
-    data = db.get_latest_by_sensor()
+    data = db.get_latest_by_device()
 
     return api_response(True, {
         'data': data,
@@ -205,13 +324,45 @@ def get_latest_by_sensor():
 def get_all_stats():
     """전체 통계 데이터 조회 API"""
     db = get_db()
-    stats = db.get_all_stats()
+
+    # 각 장치별 통계
+    devices = db.get_all_devices()
+    stats = []
+
+    for device in devices:
+        device_stats = db.get_device_stats(device.device_no)
+        if device_stats:
+            stats.append({
+                'device_no': device.device_no,
+                'site_code': device.site_code,
+                'name': device.name,
+                'stats': device_stats
+            })
 
     return api_response(True, {
         'stats': stats,
         'count': len(stats)
     })
 
+
+@api_bp.route('/data/stats/<device_no>')
+def get_device_stats(device_no):
+    """특정 장치 통계 조회 API"""
+    db = get_db()
+
+    device = db.get_device(device_no)
+    if not device:
+        return api_response(False, message='장치를 찾을 수 없습니다.', status_code=404)
+
+    stats = db.get_device_stats(device_no)
+
+    return api_response(True, {
+        'device_no': device_no,
+        'stats': stats
+    })
+
+
+# ===== MQTT API =====
 
 @api_bp.route('/mqtt/status')
 def mqtt_status():
@@ -279,6 +430,56 @@ def get_mqtt_logs():
         ],
         'count': len(logs)
     })
+
+
+# ===== 알람 임계값 API =====
+
+@api_bp.route('/alarms/thresholds')
+def get_alarm_thresholds():
+    """알람 임계값 조회 API"""
+    db = get_db()
+    site_code = request.args.get('site')
+    device_no = request.args.get('device')
+
+    thresholds = db.get_alarm_thresholds(site_code=site_code, device_no=device_no)
+
+    return api_response(True, {
+        'thresholds': thresholds,
+        'count': len(thresholds)
+    })
+
+
+@api_bp.route('/alarms/thresholds', methods=['POST'])
+def set_alarm_threshold():
+    """알람 임계값 설정 API"""
+    db = get_db()
+
+    data = request.get_json()
+    if not data:
+        return api_response(False, message='JSON 데이터가 필요합니다.', status_code=400)
+
+    sensor_type = data.get('sensor_type')
+    min_value = data.get('min_value')
+    max_value = data.get('max_value')
+
+    if not sensor_type:
+        return api_response(False, message='sensor_type이 필요합니다.', status_code=400)
+
+    if sensor_type not in SENSOR_TYPES:
+        return api_response(False, message=f'유효하지 않은 센서 타입: {sensor_type}', status_code=400)
+
+    success = db.set_alarm_threshold(
+        sensor_type=sensor_type,
+        min_value=min_value,
+        max_value=max_value,
+        site_code=data.get('site_code'),
+        device_no=data.get('device_no')
+    )
+
+    if success:
+        return api_response(True, message='알람 임계값 설정 완료')
+    else:
+        return api_response(False, message='알람 임계값 설정 실패', status_code=500)
 
 
 # ===== 에러 핸들러 =====

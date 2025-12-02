@@ -1,5 +1,5 @@
 /**
- * 대시보드 JavaScript
+ * 환경 센서 대시보드 JavaScript
  * Socket.IO를 통한 실시간 데이터 업데이트 및 UI 관리
  */
 
@@ -7,13 +7,32 @@
 let socket = null;
 let isConnected = false;
 
+// 센서 타입 정보
+const SENSOR_TYPES = {
+    o2: { name: '산소', unit: '%' },
+    no2: { name: '이산화질소', unit: 'ppm' },
+    co: { name: '일산화탄소', unit: 'ppm' },
+    co2: { name: '이산화탄소', unit: 'ppm' },
+    h2s: { name: '황화수소', unit: 'ppm' },
+    ch4: { name: '메탄', unit: '%LEL' },
+    ch2o: { name: '폼알데하이드', unit: 'ppm' },
+    o3: { name: '오존', unit: 'ppm' },
+    pm25: { name: 'PM2.5', unit: 'ug/m3' },
+    pm10: { name: 'PM10', unit: 'ug/m3' },
+    pm1: { name: 'PM1.0', unit: 'ug/m3' },
+    temp: { name: '온도', unit: 'C' },
+    humi: { name: '습도', unit: '%' },
+    voc: { name: 'VOC', unit: 'ppm' }
+};
+
 // DOM 요소
 const elements = {
     mqttStatus: document.getElementById('mqtt-status'),
     mqttConnectionStatus: document.getElementById('mqtt-connection-status'),
-    activeSensorsCount: document.getElementById('active-sensors-count'),
+    activeSitesCount: document.getElementById('active-sites-count'),
+    activeDevicesCount: document.getElementById('active-devices-count'),
     totalDataCount: document.getElementById('total-data-count'),
-    sensorCards: document.getElementById('sensor-cards'),
+    deviceCards: document.getElementById('device-cards'),
     recentDataBody: document.getElementById('recent-data-body'),
     realtimeLog: document.getElementById('realtime-log'),
     refreshBtn: document.getElementById('refresh-btn'),
@@ -44,13 +63,20 @@ function initSocketIO() {
         console.log('연결 응답:', data);
     });
 
-    // 실시간 센서 데이터 수신
+    // 실시간 환경 데이터 수신
+    socket.on('environment_data', (data) => {
+        console.log('환경 데이터 수신:', data);
+        updateDeviceCard(data);
+        addRecentDataRow(data);
+        updateSensorValues(data);
+        addLog(`데이터 수신: ${data.device_no} (${data.site_code})`, 'info');
+        updateLastUpdateTime();
+    });
+
+    // 기존 센서 데이터도 지원 (하위 호환)
     socket.on('sensor_data', (data) => {
         console.log('센서 데이터 수신:', data);
-        updateSensorCard(data);
-        addRecentDataRow(data);
-        addLog(`데이터 수신: ${data.sensor_id} = ${data.value} ${data.unit}`, 'info');
-        updateLastUpdateTime();
+        addLog(`센서 데이터: ${data.sensor_id} = ${data.value} ${data.unit}`, 'info');
     });
 
     socket.on('latest_data', (data) => {
@@ -108,27 +134,33 @@ async function loadDashboardData() {
             updateMqttStatusUI(healthResult.data.mqtt_connected);
 
             if (elements.totalDataCount) {
-                const totalData = healthResult.data.data_counts.sensor_data || 0;
+                const totalData = healthResult.data.data_counts.environment_data || 0;
                 elements.totalDataCount.textContent = `${totalData.toLocaleString()}건`;
             }
         }
 
-        // 센서 목록
-        const sensorsResponse = await fetch('/api/sensors?active=true');
-        const sensorsResult = await sensorsResponse.json();
+        // 현장 목록
+        const sitesResponse = await fetch('/api/sites');
+        const sitesResult = await sitesResponse.json();
 
-        if (sensorsResult.success) {
-            if (elements.activeSensorsCount) {
-                elements.activeSensorsCount.textContent = `${sensorsResult.data.count}개`;
-            }
+        if (sitesResult.success && elements.activeSitesCount) {
+            elements.activeSitesCount.textContent = `${sitesResult.data.count}개`;
         }
 
-        // 센서별 최신 데이터
-        const latestResponse = await fetch('/api/data/latest-by-sensor');
-        const latestResult = await latestResponse.json();
+        // 장치 목록
+        const devicesResponse = await fetch('/api/devices');
+        const devicesResult = await devicesResponse.json();
 
-        if (latestResult.success) {
-            renderSensorCards(latestResult.data.data);
+        if (devicesResult.success && elements.activeDevicesCount) {
+            elements.activeDevicesCount.textContent = `${devicesResult.data.count}개`;
+        }
+
+        // 장치별 최신 데이터
+        const latestByDeviceResponse = await fetch('/api/data/latest-by-device');
+        const latestByDeviceResult = await latestByDeviceResponse.json();
+
+        if (latestByDeviceResult.success) {
+            renderDeviceCards(latestByDeviceResult.data.data);
         }
 
         // 최근 데이터
@@ -137,6 +169,10 @@ async function loadDashboardData() {
 
         if (recentResult.success) {
             renderRecentData(recentResult.data.data);
+            // 첫 번째 데이터로 센서 값 업데이트
+            if (recentResult.data.data && recentResult.data.data.length > 0) {
+                updateSensorValues(recentResult.data.data[0]);
+            }
         }
 
         updateLastUpdateTime();
@@ -149,76 +185,173 @@ async function loadDashboardData() {
 }
 
 /**
- * 센서 카드 렌더링
+ * 센서 값 업데이트 (센서 타입별 현재 상태)
  */
-function renderSensorCards(data) {
-    if (!elements.sensorCards) return;
+function updateSensorValues(data) {
+    const sensorKeys = ['o2', 'no2', 'co', 'co2', 'h2s', 'ch4', 'ch2o', 'o3', 'pm25', 'pm10', 'pm1', 'temp', 'humi', 'voc'];
+
+    sensorKeys.forEach(key => {
+        const el = document.getElementById(`val-${key}`);
+        if (el && data[key] !== null && data[key] !== undefined) {
+            const value = parseFloat(data[key]);
+            el.textContent = value.toFixed(key === 'co2' || key.startsWith('pm') ? 0 : 1);
+
+            // 값 변경 애니메이션
+            el.style.color = '#3498db';
+            setTimeout(() => {
+                el.style.color = '';
+            }, 500);
+        }
+    });
+}
+
+/**
+ * 장치 카드 렌더링
+ */
+function renderDeviceCards(data) {
+    if (!elements.deviceCards) return;
 
     if (!data || data.length === 0) {
-        elements.sensorCards.innerHTML = '<p class="no-data-message">수신된 센서 데이터가 없습니다.</p>';
+        elements.deviceCards.innerHTML = '<p class="no-data-message">수신된 장치 데이터가 없습니다.</p>';
         return;
     }
 
-    elements.sensorCards.innerHTML = data.map(sensor => `
-        <div class="sensor-data-card" data-sensor-id="${sensor.sensor_id}">
+    elements.deviceCards.innerHTML = data.map(device => `
+        <div class="device-data-card" data-device-no="${device.device_no}">
             <div class="card-header">
-                <h3>${sensor.sensor_id}</h3>
-                <span class="sensor-type-badge ${sensor.sensor_type}">${sensor.sensor_type}</span>
+                <h3>${device.device_no}</h3>
+                <span class="site-code-badge">${device.site_code || '-'}</span>
             </div>
             <div class="card-body">
-                <div class="sensor-value">${parseFloat(sensor.value).toFixed(2)}</div>
-                <div class="sensor-unit">${sensor.unit}</div>
-                <div class="sensor-timestamp">${formatTimestamp(sensor.received_at)}</div>
+                <div class="env-values-grid">
+                    <div class="env-value-item">
+                        <span class="label">O2</span>
+                        <span class="value">${formatValue(device.o2, 1)}%</span>
+                    </div>
+                    <div class="env-value-item">
+                        <span class="label">CO</span>
+                        <span class="value">${formatValue(device.co, 1)}ppm</span>
+                    </div>
+                    <div class="env-value-item">
+                        <span class="label">CO2</span>
+                        <span class="value">${formatValue(device.co2, 0)}ppm</span>
+                    </div>
+                    <div class="env-value-item">
+                        <span class="label">온도</span>
+                        <span class="value">${formatValue(device.temp, 1)}C</span>
+                    </div>
+                    <div class="env-value-item">
+                        <span class="label">습도</span>
+                        <span class="value">${formatValue(device.humi, 1)}%</span>
+                    </div>
+                    <div class="env-value-item">
+                        <span class="label">PM2.5</span>
+                        <span class="value">${formatValue(device.pm25, 0)}ug/m3</span>
+                    </div>
+                </div>
+                <div class="device-timestamp">${formatTimestamp(device.received_at)}</div>
             </div>
         </div>
     `).join('');
 }
 
 /**
- * 센서 카드 업데이트 (실시간)
+ * 장치 카드 업데이트 (실시간)
  */
-function updateSensorCard(data) {
-    if (!elements.sensorCards) return;
+function updateDeviceCard(data) {
+    if (!elements.deviceCards) return;
 
-    const existingCard = elements.sensorCards.querySelector(`[data-sensor-id="${data.sensor_id}"]`);
+    const existingCard = elements.deviceCards.querySelector(`[data-device-no="${data.device_no}"]`);
 
     if (existingCard) {
         // 기존 카드 업데이트
-        const valueEl = existingCard.querySelector('.sensor-value');
-        const unitEl = existingCard.querySelector('.sensor-unit');
-        const timestampEl = existingCard.querySelector('.sensor-timestamp');
+        const valuesGrid = existingCard.querySelector('.env-values-grid');
+        if (valuesGrid) {
+            valuesGrid.innerHTML = `
+                <div class="env-value-item">
+                    <span class="label">O2</span>
+                    <span class="value">${formatValue(data.o2, 1)}%</span>
+                </div>
+                <div class="env-value-item">
+                    <span class="label">CO</span>
+                    <span class="value">${formatValue(data.co, 1)}ppm</span>
+                </div>
+                <div class="env-value-item">
+                    <span class="label">CO2</span>
+                    <span class="value">${formatValue(data.co2, 0)}ppm</span>
+                </div>
+                <div class="env-value-item">
+                    <span class="label">온도</span>
+                    <span class="value">${formatValue(data.temp, 1)}C</span>
+                </div>
+                <div class="env-value-item">
+                    <span class="label">습도</span>
+                    <span class="value">${formatValue(data.humi, 1)}%</span>
+                </div>
+                <div class="env-value-item">
+                    <span class="label">PM2.5</span>
+                    <span class="value">${formatValue(data.pm25, 0)}ug/m3</span>
+                </div>
+            `;
+        }
 
-        if (valueEl) valueEl.textContent = parseFloat(data.value).toFixed(2);
-        if (unitEl) unitEl.textContent = data.unit;
-        if (timestampEl) timestampEl.textContent = formatTimestamp(data.timestamp);
+        const timestampEl = existingCard.querySelector('.device-timestamp');
+        if (timestampEl) {
+            timestampEl.textContent = formatTimestamp(data.received_at || new Date().toISOString());
+        }
 
         // 업데이트 애니메이션
         existingCard.style.transform = 'scale(1.02)';
+        existingCard.style.boxShadow = '0 4px 15px rgba(52, 152, 219, 0.3)';
         setTimeout(() => {
             existingCard.style.transform = 'scale(1)';
-        }, 200);
+            existingCard.style.boxShadow = '';
+        }, 300);
     } else {
         // 새 카드 추가
+        const noDataMsg = elements.deviceCards.querySelector('.no-data-message');
+        if (noDataMsg) noDataMsg.remove();
+
         const newCard = document.createElement('div');
-        newCard.className = 'sensor-data-card';
-        newCard.dataset.sensorId = data.sensor_id;
+        newCard.className = 'device-data-card';
+        newCard.dataset.deviceNo = data.device_no;
         newCard.innerHTML = `
             <div class="card-header">
-                <h3>${data.sensor_id}</h3>
-                <span class="sensor-type-badge ${data.sensor_type}">${data.sensor_type}</span>
+                <h3>${data.device_no}</h3>
+                <span class="site-code-badge">${data.site_code || '-'}</span>
             </div>
             <div class="card-body">
-                <div class="sensor-value">${parseFloat(data.value).toFixed(2)}</div>
-                <div class="sensor-unit">${data.unit}</div>
-                <div class="sensor-timestamp">${formatTimestamp(data.timestamp)}</div>
+                <div class="env-values-grid">
+                    <div class="env-value-item">
+                        <span class="label">O2</span>
+                        <span class="value">${formatValue(data.o2, 1)}%</span>
+                    </div>
+                    <div class="env-value-item">
+                        <span class="label">CO</span>
+                        <span class="value">${formatValue(data.co, 1)}ppm</span>
+                    </div>
+                    <div class="env-value-item">
+                        <span class="label">CO2</span>
+                        <span class="value">${formatValue(data.co2, 0)}ppm</span>
+                    </div>
+                    <div class="env-value-item">
+                        <span class="label">온도</span>
+                        <span class="value">${formatValue(data.temp, 1)}C</span>
+                    </div>
+                    <div class="env-value-item">
+                        <span class="label">습도</span>
+                        <span class="value">${formatValue(data.humi, 1)}%</span>
+                    </div>
+                    <div class="env-value-item">
+                        <span class="label">PM2.5</span>
+                        <span class="value">${formatValue(data.pm25, 0)}ug/m3</span>
+                    </div>
+                </div>
+                <div class="device-timestamp">${formatTimestamp(data.received_at || new Date().toISOString())}</div>
             </div>
         `;
 
-        // "데이터 없음" 메시지 제거
-        const noDataMsg = elements.sensorCards.querySelector('.no-data-message');
-        if (noDataMsg) noDataMsg.remove();
-
-        elements.sensorCards.appendChild(newCard);
+        elements.deviceCards.appendChild(newCard);
     }
 }
 
@@ -231,7 +364,7 @@ function renderRecentData(data) {
     if (!data || data.length === 0) {
         elements.recentDataBody.innerHTML = `
             <tr>
-                <td colspan="5" class="no-data-message">수신된 데이터가 없습니다.</td>
+                <td colspan="9" class="no-data-message">수신된 데이터가 없습니다.</td>
             </tr>
         `;
         return;
@@ -239,10 +372,14 @@ function renderRecentData(data) {
 
     elements.recentDataBody.innerHTML = data.map(item => `
         <tr>
-            <td>${item.sensor_id}</td>
-            <td><span class="sensor-type-badge ${item.sensor_type}">${item.sensor_type}</span></td>
-            <td class="value-cell">${parseFloat(item.value).toFixed(2)}</td>
-            <td>${item.unit}</td>
+            <td>${item.device_no}</td>
+            <td>${item.site_code || '-'}</td>
+            <td>${formatValue(item.o2, 1)}</td>
+            <td>${formatValue(item.co, 1)}</td>
+            <td>${formatValue(item.co2, 0)}</td>
+            <td>${formatValue(item.temp, 1)}</td>
+            <td>${formatValue(item.humi, 1)}</td>
+            <td>${formatValue(item.pm25, 0)}</td>
             <td>${formatTimestamp(item.received_at)}</td>
         </tr>
     `).join('');
@@ -263,11 +400,15 @@ function addRecentDataRow(data) {
     // 새 행 추가
     const newRow = document.createElement('tr');
     newRow.innerHTML = `
-        <td>${data.sensor_id}</td>
-        <td><span class="sensor-type-badge ${data.sensor_type}">${data.sensor_type}</span></td>
-        <td class="value-cell">${parseFloat(data.value).toFixed(2)}</td>
-        <td>${data.unit}</td>
-        <td>${formatTimestamp(data.timestamp || new Date().toISOString())}</td>
+        <td>${data.device_no}</td>
+        <td>${data.site_code || '-'}</td>
+        <td>${formatValue(data.o2, 1)}</td>
+        <td>${formatValue(data.co, 1)}</td>
+        <td>${formatValue(data.co2, 0)}</td>
+        <td>${formatValue(data.temp, 1)}</td>
+        <td>${formatValue(data.humi, 1)}</td>
+        <td>${formatValue(data.pm25, 0)}</td>
+        <td>${formatTimestamp(data.received_at || new Date().toISOString())}</td>
     `;
 
     // 맨 앞에 추가
@@ -279,7 +420,7 @@ function addRecentDataRow(data) {
     }
 
     // 하이라이트 효과
-    newRow.style.backgroundColor = '#fff3cd';
+    newRow.style.backgroundColor = '#d4edda';
     setTimeout(() => {
         newRow.style.backgroundColor = '';
     }, 1000);
@@ -318,6 +459,14 @@ function updateLastUpdateTime() {
 }
 
 /**
+ * 값 포맷
+ */
+function formatValue(value, decimals = 1) {
+    if (value === null || value === undefined) return '-';
+    return parseFloat(value).toFixed(decimals);
+}
+
+/**
  * 타임스탬프 포맷
  */
 function formatTimestamp(timestamp) {
@@ -342,7 +491,7 @@ function formatTimestamp(timestamp) {
  * 초기화
  */
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('대시보드 초기화');
+    console.log('환경 센서 대시보드 초기화');
 
     // Socket.IO 연결
     initSocketIO();

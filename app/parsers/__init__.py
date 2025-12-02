@@ -1,14 +1,24 @@
 """
 데이터 파서 패키지
 센서 타입별 파서를 관리하는 팩토리 패턴을 제공합니다.
+환경/가스 복합 센서 지원
 """
 
+import json
 import logging
-from typing import Optional, Dict, Type
+from typing import Optional, Dict, Type, Union
+
 from .base import BaseParser, ParsedData
 from .temperature import TemperatureParser
 from .humidity import HumidityParser
 from .vibration import VibrationParser
+from .environment import (
+    EnvironmentParser,
+    ParsedEnvironmentData,
+    parse_environment_data,
+    get_environment_parser,
+    DATA_FIELD_MAPPING
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +43,48 @@ class GenericParser(BaseParser):
             timestamp=self._parse_timestamp(data.get('timestamp')),
             extra_data=None
         )
+
+
+def is_environment_data(payload: str) -> bool:
+    """
+    환경 센서 데이터 포맷인지 확인
+
+    환경 센서 데이터는 hCd, sCd, dvNo 필드를 포함합니다.
+    """
+    try:
+        data = json.loads(payload)
+        # 환경 센서 필수 필드 확인
+        return all(key in data for key in ['hCd', 'sCd', 'dvNo'])
+    except (json.JSONDecodeError, TypeError):
+        return False
+
+
+def parse_mqtt_data(
+    payload: str,
+    topic: str = None,
+    qos: int = 0
+) -> Optional[Union[ParsedData, ParsedEnvironmentData]]:
+    """
+    MQTT 데이터 자동 파싱
+
+    데이터 포맷을 자동으로 감지하여 적절한 파서를 선택합니다.
+    - 환경/가스 센서 포맷 ({hCd, sCd, dvNo, data1~14})
+    - 단일 센서 포맷 ({sensor_id, type, value, unit})
+
+    Args:
+        payload: MQTT 메시지 페이로드
+        topic: MQTT 토픽
+        qos: QoS 레벨
+
+    Returns:
+        ParsedEnvironmentData 또는 ParsedData 또는 None
+    """
+    # 환경 센서 데이터인지 확인
+    if is_environment_data(payload):
+        return parse_environment_data(payload, topic)
+
+    # 단일 센서 데이터로 처리
+    return ParserFactory.parse(payload, topic)
 
 
 class ParserFactory:
@@ -100,8 +152,6 @@ class ParserFactory:
         Returns:
             ParsedData 또는 None
         """
-        import json
-
         # 센서 타입 추출
         sensor_type = None
 
@@ -131,7 +181,7 @@ class ParserFactory:
 
 # 편의를 위한 함수들
 def parse_sensor_data(payload: str, topic: str = None) -> Optional[ParsedData]:
-    """센서 데이터 파싱 (단축 함수)"""
+    """단일 센서 데이터 파싱 (단축 함수)"""
     return ParserFactory.parse(payload, topic)
 
 
@@ -150,4 +200,12 @@ __all__ = [
     'ParserFactory',
     'parse_sensor_data',
     'get_parser',
+    # 환경 센서 관련
+    'EnvironmentParser',
+    'ParsedEnvironmentData',
+    'parse_environment_data',
+    'get_environment_parser',
+    'is_environment_data',
+    'parse_mqtt_data',
+    'DATA_FIELD_MAPPING',
 ]

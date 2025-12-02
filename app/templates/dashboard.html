@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}대시보드 - MQTT 센서 모니터링{% endblock %}
+{% block title %}대시보드 - 환경 센서 모니터링{% endblock %}
 
 {% block content %}
 <div class="dashboard">
     <header class="page-header">
-        <h1>실시간 센서 대시보드</h1>
+        <h1>실시간 환경 센서 대시보드</h1>
         <div class="header-actions">
             <button id="refresh-btn" class="btn btn-primary">새로고침</button>
             <span id="last-update">마지막 업데이트: -</span>
@@ -29,12 +29,24 @@
         <div class="card status-card">
             <div class="card-icon sensor-icon">
                 <svg viewBox="0 0 24 24" width="24" height="24">
+                    <path fill="currentColor" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                </svg>
+            </div>
+            <div class="card-content">
+                <h3>활성 현장</h3>
+                <p id="active-sites-count">0개</p>
+            </div>
+        </div>
+
+        <div class="card status-card">
+            <div class="card-icon device-icon">
+                <svg viewBox="0 0 24 24" width="24" height="24">
                     <path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
                 </svg>
             </div>
             <div class="card-content">
-                <h3>활성 센서</h3>
-                <p id="active-sensors-count">0개</p>
+                <h3>활성 장치</h3>
+                <p id="active-devices-count">0개</p>
             </div>
         </div>
 
@@ -51,11 +63,108 @@
         </div>
     </section>
 
-    <!-- 센서별 최신 데이터 -->
+    <!-- 장치별 최신 환경 데이터 -->
     <section class="sensor-data-section">
-        <h2>센서별 최신 데이터</h2>
-        <div id="sensor-cards" class="sensor-cards-grid">
+        <h2>장치별 최신 환경 데이터</h2>
+        <div id="device-cards" class="device-cards-grid">
             <p class="loading-message">데이터를 불러오는 중...</p>
+        </div>
+    </section>
+
+    <!-- 센서 타입별 현재 상태 -->
+    <section class="sensor-types-section">
+        <h2>센서 타입별 현재 상태</h2>
+        <div class="sensor-types-grid">
+            <!-- 가스 센서 -->
+            <div class="sensor-group">
+                <h3>가스 센서</h3>
+                <div class="sensor-values">
+                    <div class="sensor-value-item" data-sensor="o2">
+                        <span class="sensor-label">O2 (산소)</span>
+                        <span class="sensor-value" id="val-o2">-</span>
+                        <span class="sensor-unit">%</span>
+                    </div>
+                    <div class="sensor-value-item" data-sensor="co">
+                        <span class="sensor-label">CO (일산화탄소)</span>
+                        <span class="sensor-value" id="val-co">-</span>
+                        <span class="sensor-unit">ppm</span>
+                    </div>
+                    <div class="sensor-value-item" data-sensor="co2">
+                        <span class="sensor-label">CO2 (이산화탄소)</span>
+                        <span class="sensor-value" id="val-co2">-</span>
+                        <span class="sensor-unit">ppm</span>
+                    </div>
+                    <div class="sensor-value-item" data-sensor="no2">
+                        <span class="sensor-label">NO2 (이산화질소)</span>
+                        <span class="sensor-value" id="val-no2">-</span>
+                        <span class="sensor-unit">ppm</span>
+                    </div>
+                    <div class="sensor-value-item" data-sensor="h2s">
+                        <span class="sensor-label">H2S (황화수소)</span>
+                        <span class="sensor-value" id="val-h2s">-</span>
+                        <span class="sensor-unit">ppm</span>
+                    </div>
+                    <div class="sensor-value-item" data-sensor="ch4">
+                        <span class="sensor-label">CH4 (메탄)</span>
+                        <span class="sensor-value" id="val-ch4">-</span>
+                        <span class="sensor-unit">%LEL</span>
+                    </div>
+                    <div class="sensor-value-item" data-sensor="ch2o">
+                        <span class="sensor-label">CH2O (폼알데하이드)</span>
+                        <span class="sensor-value" id="val-ch2o">-</span>
+                        <span class="sensor-unit">ppm</span>
+                    </div>
+                    <div class="sensor-value-item" data-sensor="o3">
+                        <span class="sensor-label">O3 (오존)</span>
+                        <span class="sensor-value" id="val-o3">-</span>
+                        <span class="sensor-unit">ppm</span>
+                    </div>
+                    <div class="sensor-value-item" data-sensor="voc">
+                        <span class="sensor-label">VOC (휘발성유기화합물)</span>
+                        <span class="sensor-value" id="val-voc">-</span>
+                        <span class="sensor-unit">ppm</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 미세먼지 센서 -->
+            <div class="sensor-group">
+                <h3>미세먼지</h3>
+                <div class="sensor-values">
+                    <div class="sensor-value-item" data-sensor="pm1">
+                        <span class="sensor-label">PM1.0</span>
+                        <span class="sensor-value" id="val-pm1">-</span>
+                        <span class="sensor-unit">ug/m3</span>
+                    </div>
+                    <div class="sensor-value-item" data-sensor="pm25">
+                        <span class="sensor-label">PM2.5</span>
+                        <span class="sensor-value" id="val-pm25">-</span>
+                        <span class="sensor-unit">ug/m3</span>
+                    </div>
+                    <div class="sensor-value-item" data-sensor="pm10">
+                        <span class="sensor-label">PM10</span>
+                        <span class="sensor-value" id="val-pm10">-</span>
+                        <span class="sensor-unit">ug/m3</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 환경 센서 -->
+            <div class="sensor-group">
+                <h3>환경</h3>
+                <div class="sensor-values">
+                    <div class="sensor-value-item" data-sensor="temp">
+                        <span class="sensor-label">온도</span>
+                        <span class="sensor-value" id="val-temp">-</span>
+                        <span class="sensor-unit">C</span>
+                    </div>
+                    <div class="sensor-value-item" data-sensor="humi">
+                        <span class="sensor-label">습도</span>
+                        <span class="sensor-value" id="val-humi">-</span>
+                        <span class="sensor-unit">%</span>
+                    </div>
+                </div>
+            </div>
         </div>
     </section>
 
@@ -66,16 +175,20 @@
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>센서 ID</th>
-                        <th>타입</th>
-                        <th>값</th>
-                        <th>단위</th>
+                        <th>장치번호</th>
+                        <th>현장</th>
+                        <th>O2</th>
+                        <th>CO</th>
+                        <th>CO2</th>
+                        <th>온도</th>
+                        <th>습도</th>
+                        <th>PM2.5</th>
                         <th>수신 시간</th>
                     </tr>
                 </thead>
                 <tbody id="recent-data-body">
                     <tr>
-                        <td colspan="5" class="loading-message">데이터를 불러오는 중...</td>
+                        <td colspan="9" class="loading-message">데이터를 불러오는 중...</td>
                     </tr>
                 </tbody>
             </table>

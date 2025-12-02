@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}{{ device.device_no }} - 장치 상세{% endblock %}
+
+{% block content %}
+<div class="device-detail-page">
+    <header class="page-header">
+        <div class="breadcrumb">
+            <a href="{{ url_for('main.devices_page') }}">장치 목록</a> &gt;
+            <span>{{ device.device_no }}</span>
+        </div>
+        <h1>{{ device.name or device.device_no }}</h1>
+    </header>
+
+    <!-- 장치 정보 -->
+    <section class="device-info-section">
+        <div class="info-card">
+            <h2>장치 정보</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <label>장치 번호 (dvNo)</label>
+                    <span>{{ device.device_no }}</span>
+                </div>
+                <div class="info-item">
+                    <label>현장 코드</label>
+                    <span>{{ device.site_code }}</span>
+                </div>
+                <div class="info-item">
+                    <label>장치명</label>
+                    <span>{{ device.name or '미지정' }}</span>
+                </div>
+                <div class="info-item">
+                    <label>상태</label>
+                    <span class="device-status {{ 'active' if device.is_active else 'inactive' }}">
+                        {{ '활성' if device.is_active else '비활성' }}
+                    </span>
+                </div>
+                <div class="info-item">
+                    <label>등록일</label>
+                    <span>{{ device.created_at or '-' }}</span>
+                </div>
+                <div class="info-item">
+                    <label>최근 업데이트</label>
+                    <span>{{ device.updated_at or '-' }}</span>
+                </div>
+            </div>
+            {% if device.description %}
+            <div class="info-description">
+                <label>설명</label>
+                <p>{{ device.description }}</p>
+            </div>
+            {% endif %}
+        </div>
+    </section>
+
+    <!-- 센서 데이터 현황 -->
+    <section class="sensor-status-section">
+        <h2>센서 현황</h2>
+        <div class="sensor-types-grid">
+            <!-- 가스 센서 -->
+            <div class="sensor-group">
+                <h3>가스 센서</h3>
+                <div class="sensor-values">
+                    {% for key, info in sensor_types.items() if key in ['o2', 'no2', 'co', 'co2', 'h2s', 'ch4', 'ch2o', 'o3', 'voc'] %}
+                    <div class="sensor-value-item">
+                        <span class="sensor-label">{{ info.name_en }} ({{ info.name }})</span>
+                        <span class="sensor-value" id="current-{{ key }}">-</span>
+                        <span class="sensor-unit">{{ info.unit }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- 미세먼지 -->
+            <div class="sensor-group">
+                <h3>미세먼지</h3>
+                <div class="sensor-values">
+                    {% for key, info in sensor_types.items() if key in ['pm1', 'pm25', 'pm10'] %}
+                    <div class="sensor-value-item">
+                        <span class="sensor-label">{{ info.name_en }} ({{ info.name }})</span>
+                        <span class="sensor-value" id="current-{{ key }}">-</span>
+                        <span class="sensor-unit">{{ info.unit }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- 환경 -->
+            <div class="sensor-group">
+                <h3>환경</h3>
+                <div class="sensor-values">
+                    {% for key, info in sensor_types.items() if key in ['temp', 'humi'] %}
+                    <div class="sensor-value-item">
+                        <span class="sensor-label">{{ info.name_en }} ({{ info.name }})</span>
+                        <span class="sensor-value" id="current-{{ key }}">-</span>
+                        <span class="sensor-unit">{{ info.unit }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 최근 데이터 -->
+    <section class="recent-data-section">
+        <h2>최근 데이터 (최대 100건)</h2>
+        <div class="table-container">
+            <table class="data-table environment-data-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>O2</th>
+                        <th>NO2</th>
+                        <th>CO</th>
+                        <th>CO2</th>
+                        <th>H2S</th>
+                        <th>CH4</th>
+                        <th>온도</th>
+                        <th>습도</th>
+                        <th>PM2.5</th>
+                        <th>PM10</th>
+                        <th>수신 시간</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if recent_data %}
+                        {% for data in recent_data %}
+                        <tr>
+                            <td>{{ data.id }}</td>
+                            <td>{{ "%.1f"|format(data.o2) if data.o2 is not none else '-' }}</td>
+                            <td>{{ "%.2f"|format(data.no2) if data.no2 is not none else '-' }}</td>
+                            <td>{{ "%.1f"|format(data.co) if data.co is not none else '-' }}</td>
+                            <td>{{ "%.0f"|format(data.co2) if data.co2 is not none else '-' }}</td>
+                            <td>{{ "%.2f"|format(data.h2s) if data.h2s is not none else '-' }}</td>
+                            <td>{{ "%.1f"|format(data.ch4) if data.ch4 is not none else '-' }}</td>
+                            <td>{{ "%.1f"|format(data.temp) if data.temp is not none else '-' }}</td>
+                            <td>{{ "%.1f"|format(data.humi) if data.humi is not none else '-' }}</td>
+                            <td>{{ "%.0f"|format(data.pm25) if data.pm25 is not none else '-' }}</td>
+                            <td>{{ "%.0f"|format(data.pm10) if data.pm10 is not none else '-' }}</td>
+                            <td>{{ data.received_at }}</td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="12" class="no-data-message">데이터가 없습니다.</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+<script>
+// 최신 데이터로 현황 업데이트
+document.addEventListener('DOMContentLoaded', function() {
+    {% if recent_data and recent_data|length > 0 %}
+    const latestData = {
+        o2: {{ recent_data[0].o2 if recent_data[0].o2 is not none else 'null' }},
+        no2: {{ recent_data[0].no2 if recent_data[0].no2 is not none else 'null' }},
+        co: {{ recent_data[0].co if recent_data[0].co is not none else 'null' }},
+        co2: {{ recent_data[0].co2 if recent_data[0].co2 is not none else 'null' }},
+        h2s: {{ recent_data[0].h2s if recent_data[0].h2s is not none else 'null' }},
+        ch4: {{ recent_data[0].ch4 if recent_data[0].ch4 is not none else 'null' }},
+        ch2o: {{ recent_data[0].ch2o if recent_data[0].ch2o is not none else 'null' }},
+        o3: {{ recent_data[0].o3 if recent_data[0].o3 is not none else 'null' }},
+        pm25: {{ recent_data[0].pm25 if recent_data[0].pm25 is not none else 'null' }},
+        pm10: {{ recent_data[0].pm10 if recent_data[0].pm10 is not none else 'null' }},
+        pm1: {{ recent_data[0].pm1 if recent_data[0].pm1 is not none else 'null' }},
+        temp: {{ recent_data[0].temp if recent_data[0].temp is not none else 'null' }},
+        humi: {{ recent_data[0].humi if recent_data[0].humi is not none else 'null' }},
+        voc: {{ recent_data[0].voc if recent_data[0].voc is not none else 'null' }}
+    };
+
+    Object.keys(latestData).forEach(key => {
+        const el = document.getElementById('current-' + key);
+        if (el && latestData[key] !== null) {
+            el.textContent = latestData[key].toFixed(key === 'co2' || key.startsWith('pm') ? 0 : 1);
+        }
+    });
+    {% endif %}
+});
+</script>
+{% endblock %}

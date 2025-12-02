@@ -550,6 +550,288 @@ body {
     margin-top: auto;
 }
 
+/* ===== 장치 카드 그리드 (환경 센서용) ===== */
+.device-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 1.5rem;
+}
+
+.device-data-card {
+    background: white;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.device-data-card:hover {
+    transform: translateY(-3px);
+}
+
+.device-data-card .card-header {
+    padding: 1rem;
+    background-color: var(--dark-color);
+    color: white;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.device-data-card .card-header h3 {
+    font-size: 1rem;
+    font-weight: 500;
+}
+
+.device-data-card .card-body {
+    padding: 1rem;
+}
+
+.device-timestamp {
+    margin-top: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--text-light);
+    text-align: center;
+}
+
+/* ===== 환경 데이터 값 그리드 ===== */
+.env-values-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.8rem;
+}
+
+.env-value-item {
+    text-align: center;
+    padding: 0.5rem;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+}
+
+.env-value-item .label {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-light);
+    margin-bottom: 0.2rem;
+}
+
+.env-value-item .value {
+    font-size: 1rem;
+    font-weight: bold;
+    color: var(--primary-color);
+}
+
+/* ===== 현장/장치 코드 배지 ===== */
+.site-code-badge,
+.device-no-badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background-color: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+/* ===== 센서 타입별 현재 상태 섹션 ===== */
+.sensor-types-section {
+    margin-bottom: 2rem;
+}
+
+.sensor-types-section h2 {
+    color: var(--dark-color);
+    margin-bottom: 1rem;
+}
+
+.sensor-types-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.sensor-group {
+    background: white;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow);
+    padding: 1.5rem;
+}
+
+.sensor-group h3 {
+    color: var(--dark-color);
+    font-size: 1rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--primary-color);
+}
+
+.sensor-values {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+}
+
+.sensor-value-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+}
+
+.sensor-value-item .sensor-label {
+    font-size: 0.85rem;
+    color: var(--text-color);
+}
+
+.sensor-value-item .sensor-value {
+    font-weight: bold;
+    color: var(--primary-color);
+    font-size: 1.1rem;
+    transition: color 0.3s;
+}
+
+.sensor-value-item .sensor-unit {
+    font-size: 0.8rem;
+    color: var(--text-light);
+    margin-left: 0.3rem;
+}
+
+/* ===== 현장/장치 목록 페이지 ===== */
+.sites-grid,
+.devices-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.site-card,
+.device-card {
+    background: white;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    transition: transform 0.3s;
+}
+
+.site-card:hover,
+.device-card:hover {
+    transform: translateY(-3px);
+}
+
+.site-card-header,
+.device-card-header {
+    padding: 0.8rem 1rem;
+    background-color: var(--dark-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.site-card-header .site-code-badge,
+.device-card-header .device-no-badge {
+    background-color: var(--primary-color);
+}
+
+.site-status,
+.device-status {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 10px;
+}
+
+.site-status.active,
+.device-status.active {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.site-status.inactive,
+.device-status.inactive {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+.site-card-body,
+.device-card-body {
+    padding: 1rem;
+}
+
+.site-card-body h3,
+.device-card-body h3 {
+    color: var(--dark-color);
+    margin-bottom: 0.5rem;
+}
+
+.site-description,
+.device-description,
+.site-codes,
+.device-site,
+.site-created,
+.device-created {
+    font-size: 0.85rem;
+    color: var(--text-light);
+    margin-bottom: 0.3rem;
+}
+
+.site-codes span {
+    display: inline-block;
+    margin-right: 1rem;
+}
+
+.site-card-footer,
+.device-card-footer {
+    padding: 1rem;
+    background-color: #f8f9fa;
+    border-top: 1px solid var(--border-color);
+}
+
+/* ===== 장치 아이콘 ===== */
+.device-icon {
+    background-color: #9b59b6;
+}
+
+/* ===== 환경 데이터 테이블 ===== */
+.environment-data-table th,
+.environment-data-table td {
+    padding: 0.6rem 0.8rem;
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.environment-data-table th {
+    white-space: nowrap;
+}
+
+/* ===== 장치/현장 상세 페이지 ===== */
+.site-detail-page,
+.device-detail-page {
+    max-width: 1200px;
+}
+
+.site-info-section,
+.device-info-section {
+    margin-bottom: 2rem;
+}
+
+.devices-section {
+    margin-bottom: 2rem;
+}
+
+.devices-section h2 {
+    color: var(--dark-color);
+    margin-bottom: 1rem;
+}
+
+.sensor-status-section {
+    margin-bottom: 2rem;
+}
+
+.sensor-status-section h2 {
+    color: var(--dark-color);
+    margin-bottom: 1rem;
+}
+
 /* ===== 반응형 ===== */
 @media (max-width: 768px) {
     .navbar {
