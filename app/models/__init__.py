@@ -11,7 +11,10 @@ from .database import (
     Device,
     EnvironmentData,
     MqttLog,
-    SENSOR_TYPES
+    AlarmLog,
+    SENSOR_TYPES,
+    ALARM_LEVELS,
+    ALARM_SENSOR_TYPES
 )
 
 __all__ = [
@@ -23,5 +26,8 @@ __all__ = [
     'Device',
     'EnvironmentData',
     'MqttLog',
-    'SENSOR_TYPES'
+    'AlarmLog',
+    'SENSOR_TYPES',
+    'ALARM_LEVELS',
+    'ALARM_SENSOR_TYPES'
 ]

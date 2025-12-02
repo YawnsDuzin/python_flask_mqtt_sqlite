@@ -16,10 +16,11 @@ import paho.mqtt.client as mqtt
 from app.parsers import (
     parse_mqtt_data,
     is_environment_data,
+    is_alarm_topic,
     ParsedEnvironmentData,
-    ParsedData
+    ParsedAlarmData
 )
-from app.models import get_db, Site, Device, EnvironmentData, MqttLog, SENSOR_TYPES
+from app.models import get_db, Site, Device, EnvironmentData, MqttLog, AlarmLog, SENSOR_TYPES, ALARM_LEVELS
 
 logger = logging.getLogger(__name__)
 
@@ -273,16 +274,17 @@ class MQTTClient:
         logger.debug(f"메시지 수신: {topic} (QoS: {qos})")
 
         try:
-            # 데이터 파싱 (환경 센서 또는 단일 센서 자동 감지)
+            # 데이터 파싱 (환경 센서 또는 알람 자동 감지)
             parsed = parse_mqtt_data(payload, topic, qos)
 
             if parsed:
                 # 데이터 타입에 따라 처리
-                if isinstance(parsed, ParsedEnvironmentData):
+                if isinstance(parsed, ParsedAlarmData):
+                    # 알람 데이터
+                    self._save_alarm_data(parsed, topic, payload)
+                elif isinstance(parsed, ParsedEnvironmentData):
+                    # 환경 센서 데이터
                     self._save_environment_data(parsed, topic, qos, payload)
-                else:
-                    # 단일 센서 데이터 (기존 로직)
-                    logger.warning("단일 센서 데이터 포맷은 더 이상 지원되지 않습니다.")
 
             # 외부 핸들러 호출
             for handler in self._message_handlers:
@@ -377,6 +379,47 @@ class MQTTClient:
                 }
 
         self.socketio.emit('environment_data', sensor_data)
+
+    def _save_alarm_data(
+        self,
+        parsed: ParsedAlarmData,
+        topic: str,
+        raw_payload: str
+    ):
+        """알람 데이터를 데이터베이스에 저장"""
+        try:
+            db = get_db()
+
+            # 알람 로그 저장
+            alarm_log = parsed.to_alarm_log()
+            alarm_log.raw_payload = raw_payload
+            db.save_alarm_log(alarm_log)
+
+            logger.info(
+                f"알람 데이터 저장: {parsed.device_id} "
+                f"({parsed.sensor_type}: {parsed.value}, 레벨: {parsed.level})"
+            )
+
+            # SocketIO로 실시간 전송
+            if self.socketio:
+                self._emit_alarm_data(parsed, topic)
+
+        except Exception as e:
+            logger.error(f"알람 데이터 저장 오류: {e}")
+
+    def _emit_alarm_data(self, parsed: ParsedAlarmData, topic: str):
+        """알람 데이터를 SocketIO로 전송"""
+        if not self.socketio:
+            return
+
+        # 알람 데이터 변환
+        alarm_data = parsed.to_dict()
+        alarm_data['timestamp'] = datetime.utcnow().isoformat() + 'Z'
+
+        # 알람 이벤트 전송
+        self.socketio.emit('alarm', alarm_data)
+
+        logger.debug(f"알람 SocketIO 전송: {parsed.device_id}/{parsed.sensor_type}")
 
     def _log_mqtt_event(self, event_type: str, topic: str = None, message: str = None):
         """MQTT 이벤트 로깅"""

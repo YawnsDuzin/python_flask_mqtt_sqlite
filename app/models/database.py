@@ -89,6 +89,41 @@ class MqttLog:
     id: Optional[int] = None
 
 
+@dataclass
+class AlarmLog:
+    """경고 알람 로그 데이터 클래스"""
+    site_code: str              # 현장코드 (H001S0001)
+    device_id: str              # 장치 ID (H001S0001_1)
+    dv_no: str                  # 장치 번호
+    sensor_type: str            # 센서 타입 (o2, co, co2 등)
+    value: float                # 센서 값
+    level: int                  # 경고 레벨 (0:정상, 1:주의, 2:경고, 3:위험)
+    etc: Optional[str] = None   # 추가 정보
+    alarm_time: Optional[str] = None  # 알람 발생 시간
+    topic: Optional[str] = None
+    raw_payload: Optional[str] = None
+    is_acknowledged: bool = False     # 확인 여부
+    acknowledged_at: Optional[str] = None
+    acknowledged_by: Optional[str] = None
+    created_at: Optional[str] = None
+    id: Optional[int] = None
+
+
+# 경고 레벨 정의
+ALARM_LEVELS = {
+    0: {'name': '정상', 'name_en': 'Normal', 'color': '#2ecc71'},
+    1: {'name': '주의', 'name_en': 'Caution', 'color': '#f39c12'},
+    2: {'name': '경고', 'name_en': 'Warning', 'color': '#e67e22'},
+    3: {'name': '위험', 'name_en': 'Danger', 'color': '#e74c3c'},
+}
+
+# 알람 대상 센서 타입 (온도, 습도 제외한 12종)
+ALARM_SENSOR_TYPES = [
+    'o2', 'no2', 'co', 'co2', 'h2s', 'ch4',
+    'ch2o', 'o3', 'voc', 'pm1', 'pm25', 'pm10'
+]
+
+
 # 센서 데이터 타입 정의 (단위 포함)
 SENSOR_TYPES = {
     'o2': {'name': '산소', 'name_en': 'O2', 'unit': '%', 'min': 0, 'max': 25},
@@ -202,6 +237,33 @@ class Database:
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- alarm_logs 테이블: 경고 알람 로그
+    CREATE TABLE IF NOT EXISTS alarm_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        site_code VARCHAR(20) NOT NULL,          -- H001S0001
+        device_id VARCHAR(30) NOT NULL,          -- H001S0001_1
+        dv_no VARCHAR(10) NOT NULL,              -- 장치 번호
+        sensor_type VARCHAR(20) NOT NULL,        -- o2, co, co2 등
+        value REAL NOT NULL,                     -- 센서 값
+        level INTEGER NOT NULL,                  -- 경고 레벨 (0:정상, 1:주의, 2:경고, 3:위험)
+        etc TEXT,                                -- 추가 정보
+        alarm_time DATETIME,                     -- 알람 발생 시간
+        topic VARCHAR(200),
+        raw_payload TEXT,
+        is_acknowledged BOOLEAN DEFAULT 0,       -- 확인 여부
+        acknowledged_at DATETIME,
+        acknowledged_by VARCHAR(100),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- alarm_logs 인덱스
+    CREATE INDEX IF NOT EXISTS idx_alarm_site_code ON alarm_logs(site_code);
+    CREATE INDEX IF NOT EXISTS idx_alarm_device_id ON alarm_logs(device_id);
+    CREATE INDEX IF NOT EXISTS idx_alarm_sensor_type ON alarm_logs(sensor_type);
+    CREATE INDEX IF NOT EXISTS idx_alarm_level ON alarm_logs(level);
+    CREATE INDEX IF NOT EXISTS idx_alarm_created_at ON alarm_logs(created_at);
+    CREATE INDEX IF NOT EXISTS idx_alarm_is_acknowledged ON alarm_logs(is_acknowledged);
     """
 
     def __init__(self, db_path: str):
@@ -567,11 +629,195 @@ class Database:
             cursor.execute(sql, params)
             return [MqttLog(**dict(row)) for row in cursor.fetchall()]
 
+    # ===== AlarmLog CRUD =====
+
+    def save_alarm_log(self, alarm: AlarmLog) -> int:
+        """알람 로그 저장"""
+        sql = """
+        INSERT INTO alarm_logs
+        (site_code, device_id, dv_no, sensor_type, value, level,
+         etc, alarm_time, topic, raw_payload)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        with self.get_cursor() as cursor:
+            cursor.execute(sql, (
+                alarm.site_code,
+                alarm.device_id,
+                alarm.dv_no,
+                alarm.sensor_type,
+                alarm.value,
+                alarm.level,
+                alarm.etc,
+                alarm.alarm_time,
+                alarm.topic,
+                alarm.raw_payload
+            ))
+            return cursor.lastrowid
+
+    def get_alarm_logs(
+        self,
+        site_code: Optional[str] = None,
+        device_id: Optional[str] = None,
+        sensor_type: Optional[str] = None,
+        level: Optional[int] = None,
+        is_acknowledged: Optional[bool] = None,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0
+    ) -> List[AlarmLog]:
+        """알람 로그 조회 (필터링 지원)"""
+        sql = "SELECT * FROM alarm_logs WHERE 1=1"
+        params = []
+
+        if site_code:
+            sql += " AND site_code = ?"
+            params.append(site_code)
+
+        if device_id:
+            sql += " AND device_id = ?"
+            params.append(device_id)
+
+        if sensor_type:
+            sql += " AND sensor_type = ?"
+            params.append(sensor_type)
+
+        if level is not None:
+            sql += " AND level = ?"
+            params.append(level)
+
+        if is_acknowledged is not None:
+            sql += " AND is_acknowledged = ?"
+            params.append(1 if is_acknowledged else 0)
+
+        if start_time:
+            sql += " AND created_at >= ?"
+            params.append(start_time)
+
+        if end_time:
+            sql += " AND created_at <= ?"
+            params.append(end_time)
+
+        sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        with self.get_cursor() as cursor:
+            cursor.execute(sql, params)
+            return [AlarmLog(**dict(row)) for row in cursor.fetchall()]
+
+    def get_unacknowledged_alarms(self, limit: int = 100) -> List[AlarmLog]:
+        """미확인 알람 조회"""
+        sql = """
+        SELECT * FROM alarm_logs
+        WHERE is_acknowledged = 0
+        ORDER BY created_at DESC
+        LIMIT ?
+        """
+        with self.get_cursor() as cursor:
+            cursor.execute(sql, (limit,))
+            return [AlarmLog(**dict(row)) for row in cursor.fetchall()]
+
+    def acknowledge_alarm(
+        self,
+        alarm_id: int,
+        acknowledged_by: Optional[str] = None
+    ) -> bool:
+        """알람 확인 처리"""
+        sql = """
+        UPDATE alarm_logs
+        SET is_acknowledged = 1,
+            acknowledged_at = CURRENT_TIMESTAMP,
+            acknowledged_by = ?
+        WHERE id = ?
+        """
+        with self.get_cursor() as cursor:
+            cursor.execute(sql, (acknowledged_by, alarm_id))
+            return cursor.rowcount > 0
+
+    def acknowledge_all_alarms(
+        self,
+        site_code: Optional[str] = None,
+        acknowledged_by: Optional[str] = None
+    ) -> int:
+        """모든 미확인 알람 확인 처리"""
+        sql = """
+        UPDATE alarm_logs
+        SET is_acknowledged = 1,
+            acknowledged_at = CURRENT_TIMESTAMP,
+            acknowledged_by = ?
+        WHERE is_acknowledged = 0
+        """
+        params = [acknowledged_by]
+
+        if site_code:
+            sql += " AND site_code = ?"
+            params.append(site_code)
+
+        with self.get_cursor() as cursor:
+            cursor.execute(sql, params)
+            return cursor.rowcount
+
+    def get_alarm_stats(self) -> Dict[str, Any]:
+        """알람 통계 조회"""
+        stats = {}
+
+        with self.get_cursor() as cursor:
+            # 전체 알람 수
+            cursor.execute("SELECT COUNT(*) FROM alarm_logs")
+            stats['total'] = cursor.fetchone()[0]
+
+            # 미확인 알람 수
+            cursor.execute("SELECT COUNT(*) FROM alarm_logs WHERE is_acknowledged = 0")
+            stats['unacknowledged'] = cursor.fetchone()[0]
+
+            # 레벨별 알람 수
+            cursor.execute("""
+                SELECT level, COUNT(*) as count
+                FROM alarm_logs
+                GROUP BY level
+            """)
+            stats['by_level'] = {row['level']: row['count'] for row in cursor.fetchall()}
+
+            # 센서 타입별 알람 수
+            cursor.execute("""
+                SELECT sensor_type, COUNT(*) as count
+                FROM alarm_logs
+                GROUP BY sensor_type
+                ORDER BY count DESC
+            """)
+            stats['by_sensor'] = {row['sensor_type']: row['count'] for row in cursor.fetchall()}
+
+            # 최근 24시간 알람 수
+            cursor.execute("""
+                SELECT COUNT(*) FROM alarm_logs
+                WHERE created_at >= datetime('now', '-24 hours')
+            """)
+            stats['last_24h'] = cursor.fetchone()[0]
+
+        return stats
+
+    def get_recent_alarms_by_device(self) -> List[Dict[str, Any]]:
+        """장치별 최근 알람 조회"""
+        sql = """
+        SELECT al.* FROM alarm_logs al
+        INNER JOIN (
+            SELECT device_id, sensor_type, MAX(created_at) as max_time
+            FROM alarm_logs
+            GROUP BY device_id, sensor_type
+        ) latest ON al.device_id = latest.device_id
+                AND al.sensor_type = latest.sensor_type
+                AND al.created_at = latest.max_time
+        ORDER BY al.created_at DESC
+        """
+        with self.get_cursor() as cursor:
+            cursor.execute(sql)
+            return [dict(row) for row in cursor.fetchall()]
+
     # ===== 유틸리티 =====
 
     def get_data_count(self) -> Dict[str, int]:
         """테이블별 데이터 수 조회"""
-        tables = ['sites', 'devices', 'environment_data', 'mqtt_logs']
+        tables = ['sites', 'devices', 'environment_data', 'mqtt_logs', 'alarm_logs']
         counts = {}
 
         with self.get_cursor() as cursor:

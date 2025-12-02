@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+
+{% block title %}알람 - 환경 센서 모니터링{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>알람 관리</h1>
+    <p>센서 경고 알람 목록 및 통계</p>
+</div>
+
+<!-- 알람 통계 카드 -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value">{{ stats.total or 0 }}</div>
+        <div class="stat-label">전체 알람</div>
+    </div>
+    <div class="stat-card alarm-warning">
+        <div class="stat-value">{{ stats.unacknowledged or 0 }}</div>
+        <div class="stat-label">미확인 알람</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ stats.last_24h or 0 }}</div>
+        <div class="stat-label">최근 24시간</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ (stats.by_level or {}).get(2, 0) + (stats.by_level or {}).get(3, 0) }}</div>
+        <div class="stat-label">경고/위험</div>
+    </div>
+</div>
+
+<!-- 미확인 알람 섹션 -->
+<section class="section">
+    <div class="section-header">
+        <h2>미확인 알람 ({{ unacknowledged|length }})</h2>
+        {% if unacknowledged|length > 0 %}
+        <button class="btn btn-primary" id="btn-acknowledge-all">모두 확인 처리</button>
+        {% endif %}
+    </div>
+
+    {% if unacknowledged|length > 0 %}
+    <div class="alarm-list">
+        {% for alarm in unacknowledged %}
+        <div class="alarm-card unacknowledged level-{{ alarm.level }}" data-alarm-id="{{ alarm.id }}">
+            <div class="alarm-header">
+                <span class="alarm-level" style="background-color: {{ alarm_levels.get(alarm.level, {}).get('color', '#999') }}">
+                    {{ alarm_levels.get(alarm.level, {}).get('name', '알 수 없음') }}
+                </span>
+                <span class="alarm-sensor">{{ sensor_types.get(alarm.sensor_type, {}).get('name', alarm.sensor_type) }}</span>
+                <span class="alarm-time">{{ alarm.alarm_time or alarm.created_at }}</span>
+            </div>
+            <div class="alarm-body">
+                <div class="alarm-device">
+                    <strong>장치:</strong> {{ alarm.device_id }}
+                </div>
+                <div class="alarm-value">
+                    <strong>값:</strong> {{ alarm.value }} {{ sensor_types.get(alarm.sensor_type, {}).get('unit', '') }}
+                </div>
+                {% if alarm.etc %}
+                <div class="alarm-etc">
+                    <strong>메모:</strong> {{ alarm.etc }}
+                </div>
+                {% endif %}
+            </div>
+            <div class="alarm-footer">
+                <button class="btn btn-sm btn-outline" onclick="acknowledgeAlarm({{ alarm.id }})">확인 처리</button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>미확인 알람이 없습니다.</p>
+    </div>
+    {% endif %}
+</section>
+
+<!-- 전체 알람 이력 -->
+<section class="section">
+    <div class="section-header">
+        <h2>알람 이력</h2>
+    </div>
+
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>시간</th>
+                    <th>레벨</th>
+                    <th>장치</th>
+                    <th>센서</th>
+                    <th>값</th>
+                    <th>상태</th>
+                    <th>확인</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for alarm in alarms %}
+                <tr class="{% if not alarm.is_acknowledged %}unacknowledged{% endif %}">
+                    <td>{{ alarm.alarm_time or alarm.created_at }}</td>
+                    <td>
+                        <span class="alarm-badge" style="background-color: {{ alarm_levels.get(alarm.level, {}).get('color', '#999') }}">
+                            {{ alarm_levels.get(alarm.level, {}).get('name', '알 수 없음') }}
+                        </span>
+                    </td>
+                    <td>{{ alarm.device_id }}</td>
+                    <td>{{ sensor_types.get(alarm.sensor_type, {}).get('name', alarm.sensor_type) }}</td>
+                    <td>{{ alarm.value }} {{ sensor_types.get(alarm.sensor_type, {}).get('unit', '') }}</td>
+                    <td>
+                        {% if alarm.is_acknowledged %}
+                        <span class="status-badge acknowledged">확인됨</span>
+                        {% else %}
+                        <span class="status-badge pending">대기</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if alarm.is_acknowledged %}
+                        <small>{{ alarm.acknowledged_at }}<br>by {{ alarm.acknowledged_by or 'system' }}</small>
+                        {% else %}
+                        <button class="btn btn-xs btn-outline" onclick="acknowledgeAlarm({{ alarm.id }})">확인</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" class="text-center">알람 이력이 없습니다.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<!-- 센서별 알람 통계 -->
+{% if stats.by_sensor %}
+<section class="section">
+    <div class="section-header">
+        <h2>센서별 알람 통계</h2>
+    </div>
+    <div class="sensor-stats-grid">
+        {% for sensor_type, count in stats.by_sensor.items() %}
+        <div class="sensor-stat-card">
+            <div class="sensor-stat-name">{{ sensor_types.get(sensor_type, {}).get('name', sensor_type) }}</div>
+            <div class="sensor-stat-count">{{ count }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// 알람 확인 처리
+function acknowledgeAlarm(alarmId) {
+    fetch(`/api/alarms/${alarmId}/acknowledge`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ acknowledged_by: 'web_user' })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('알람 확인 처리 실패: ' + (data.message || ''));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('알람 확인 처리 중 오류가 발생했습니다.');
+    });
+}
+
+// 모든 알람 확인 처리
+document.getElementById('btn-acknowledge-all')?.addEventListener('click', function() {
+    if (!confirm('모든 미확인 알람을 확인 처리하시겠습니까?')) {
+        return;
+    }
+
+    fetch('/api/alarms/acknowledge-all', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ acknowledged_by: 'web_user' })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.data.message);
+            location.reload();
+        } else {
+            alert('확인 처리 실패: ' + (data.message || ''));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('확인 처리 중 오류가 발생했습니다.');
+    });
+});
+
+// 실시간 알람 수신
+if (typeof io !== 'undefined') {
+    const socket = io();
+
+    socket.on('alarm', function(data) {
+        console.log('New alarm received:', data);
+
+        // 새 알람 알림 표시
+        const notification = document.createElement('div');
+        notification.className = 'alarm-notification';
+        notification.innerHTML = `
+            <strong>새 알람!</strong>
+            <p>${data.sensor_name}: ${data.value} ${data.sensor_unit}</p>
+            <p>장치: ${data.device_id}</p>
+        `;
+        document.body.appendChild(notification);
+
+        // 3초 후 알림 제거
+        setTimeout(() => {
+            notification.remove();
+        }, 5000);
+
+        // 페이지 새로고침 (선택사항)
+        // location.reload();
+    });
+}
+</script>
+{% endblock %}

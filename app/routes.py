@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 from flask import Blueprint, render_template, jsonify, request
 
-from app.models import get_db, SENSOR_TYPES
+from app.models import get_db, SENSOR_TYPES, ALARM_LEVELS, ALARM_SENSOR_TYPES
 from app.mqtt import get_mqtt_client
 
 logger = logging.getLogger(__name__)
@@ -73,6 +73,24 @@ def device_detail(device_no):
         'device_detail.html',
         device=device,
         recent_data=recent_data,
+        sensor_types=SENSOR_TYPES
+    )
+
+
+@main_bp.route('/alarms')
+def alarms_page():
+    """알람 목록 페이지"""
+    db = get_db()
+    alarms = db.get_alarm_logs(limit=100)
+    unacknowledged = db.get_unacknowledged_alarms(limit=100)
+    stats = db.get_alarm_stats()
+
+    return render_template(
+        'alarms.html',
+        alarms=alarms,
+        unacknowledged=unacknowledged,
+        stats=stats,
+        alarm_levels=ALARM_LEVELS,
         sensor_types=SENSOR_TYPES
     )
 
@@ -480,6 +498,156 @@ def set_alarm_threshold():
         return api_response(True, message='알람 임계값 설정 완료')
     else:
         return api_response(False, message='알람 임계값 설정 실패', status_code=500)
+
+
+# ===== 알람 로그 API =====
+
+@api_bp.route('/alarms')
+def get_alarms():
+    """알람 로그 목록 조회 API"""
+    db = get_db()
+
+    limit = min(int(request.args.get('limit', 100)), 1000)
+    offset = int(request.args.get('offset', 0))
+    site_code = request.args.get('site')
+    device_id = request.args.get('device')
+    sensor_type = request.args.get('sensor')
+    level = request.args.get('level')
+    is_acknowledged = request.args.get('acknowledged')
+
+    # 파라미터 변환
+    level_int = int(level) if level is not None else None
+    ack_bool = None
+    if is_acknowledged is not None:
+        ack_bool = is_acknowledged.lower() in ('true', '1', 'yes')
+
+    alarms = db.get_alarm_logs(
+        site_code=site_code,
+        device_id=device_id,
+        sensor_type=sensor_type,
+        level=level_int,
+        is_acknowledged=ack_bool,
+        limit=limit,
+        offset=offset
+    )
+
+    return api_response(True, {
+        'alarms': [
+            {
+                'id': a.id,
+                'site_code': a.site_code,
+                'device_id': a.device_id,
+                'dv_no': a.dv_no,
+                'sensor_type': a.sensor_type,
+                'sensor_name': SENSOR_TYPES.get(a.sensor_type, {}).get('name', a.sensor_type),
+                'value': a.value,
+                'unit': SENSOR_TYPES.get(a.sensor_type, {}).get('unit', ''),
+                'level': a.level,
+                'level_name': ALARM_LEVELS.get(a.level, {}).get('name', ''),
+                'level_color': ALARM_LEVELS.get(a.level, {}).get('color', '#999'),
+                'etc': a.etc,
+                'alarm_time': a.alarm_time,
+                'is_acknowledged': a.is_acknowledged,
+                'acknowledged_at': a.acknowledged_at,
+                'acknowledged_by': a.acknowledged_by,
+                'created_at': a.created_at
+            }
+            for a in alarms
+        ],
+        'count': len(alarms),
+        'limit': limit,
+        'offset': offset
+    })
+
+
+@api_bp.route('/alarms/unacknowledged')
+def get_unacknowledged_alarms():
+    """미확인 알람 조회 API"""
+    db = get_db()
+    limit = min(int(request.args.get('limit', 100)), 500)
+
+    alarms = db.get_unacknowledged_alarms(limit=limit)
+
+    return api_response(True, {
+        'alarms': [
+            {
+                'id': a.id,
+                'site_code': a.site_code,
+                'device_id': a.device_id,
+                'dv_no': a.dv_no,
+                'sensor_type': a.sensor_type,
+                'sensor_name': SENSOR_TYPES.get(a.sensor_type, {}).get('name', a.sensor_type),
+                'value': a.value,
+                'unit': SENSOR_TYPES.get(a.sensor_type, {}).get('unit', ''),
+                'level': a.level,
+                'level_name': ALARM_LEVELS.get(a.level, {}).get('name', ''),
+                'level_color': ALARM_LEVELS.get(a.level, {}).get('color', '#999'),
+                'etc': a.etc,
+                'alarm_time': a.alarm_time,
+                'created_at': a.created_at
+            }
+            for a in alarms
+        ],
+        'count': len(alarms)
+    })
+
+
+@api_bp.route('/alarms/stats')
+def get_alarm_stats():
+    """알람 통계 조회 API"""
+    db = get_db()
+    stats = db.get_alarm_stats()
+
+    return api_response(True, {
+        'stats': stats,
+        'alarm_levels': ALARM_LEVELS,
+        'alarm_sensor_types': ALARM_SENSOR_TYPES
+    })
+
+
+@api_bp.route('/alarms/recent-by-device')
+def get_recent_alarms_by_device():
+    """장치별 최근 알람 조회 API"""
+    db = get_db()
+    alarms = db.get_recent_alarms_by_device()
+
+    return api_response(True, {
+        'alarms': alarms,
+        'count': len(alarms)
+    })
+
+
+@api_bp.route('/alarms/<int:alarm_id>/acknowledge', methods=['POST'])
+def acknowledge_alarm(alarm_id):
+    """알람 확인 처리 API"""
+    db = get_db()
+
+    data = request.get_json() or {}
+    acknowledged_by = data.get('acknowledged_by', 'system')
+
+    success = db.acknowledge_alarm(alarm_id, acknowledged_by)
+
+    if success:
+        return api_response(True, message='알람 확인 처리 완료')
+    else:
+        return api_response(False, message='알람을 찾을 수 없거나 이미 확인 처리됨', status_code=404)
+
+
+@api_bp.route('/alarms/acknowledge-all', methods=['POST'])
+def acknowledge_all_alarms():
+    """모든 미확인 알람 확인 처리 API"""
+    db = get_db()
+
+    data = request.get_json() or {}
+    site_code = data.get('site_code')
+    acknowledged_by = data.get('acknowledged_by', 'system')
+
+    count = db.acknowledge_all_alarms(site_code=site_code, acknowledged_by=acknowledged_by)
+
+    return api_response(True, {
+        'acknowledged_count': count,
+        'message': f'{count}개의 알람이 확인 처리되었습니다.'
+    })
 
 
 # ===== 에러 핸들러 =====

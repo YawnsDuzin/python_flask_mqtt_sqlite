@@ -1,11 +1,11 @@
 """
 데이터 파서 패키지
-환경/가스 복합 센서 데이터 파싱을 담당합니다.
+환경/가스 복합 센서 데이터 및 알람 파싱을 담당합니다.
 """
 
 import json
 import logging
-from typing import Optional
+from typing import Optional, Union
 
 from .environment import (
     EnvironmentParser,
@@ -13,6 +13,15 @@ from .environment import (
     parse_environment_data,
     get_environment_parser,
     DATA_FIELD_MAPPING
+)
+
+from .alarm import (
+    AlarmParser,
+    ParsedAlarmData,
+    parse_alarm_data,
+    get_alarm_parser,
+    is_alarm_topic,
+    TOPIC_SENSOR_MAPPING
 )
 
 logger = logging.getLogger(__name__)
@@ -36,11 +45,13 @@ def parse_mqtt_data(
     payload: str,
     topic: str = None,
     qos: int = 0
-) -> Optional[ParsedEnvironmentData]:
+) -> Optional[Union[ParsedEnvironmentData, ParsedAlarmData]]:
     """
     MQTT 데이터 파싱
 
-    환경/가스 센서 데이터 포맷 ({hCd, sCd, dvNo, data1~14})을 파싱합니다.
+    토픽 형식에 따라 환경 데이터 또는 알람 데이터를 파싱합니다.
+    - 환경 데이터: {site_code}/U 토픽, {hCd, sCd, dvNo, data1~14} 포맷
+    - 알람 데이터: {site_code}/W/{sensor} 토픽, {dvNo, value, level, etc, time} 포맷
 
     Args:
         payload: MQTT 메시지 페이로드
@@ -48,8 +59,13 @@ def parse_mqtt_data(
         qos: QoS 레벨
 
     Returns:
-        ParsedEnvironmentData 또는 None
+        ParsedEnvironmentData, ParsedAlarmData 또는 None
     """
+    # 알람 토픽인 경우
+    if topic and is_alarm_topic(topic):
+        return parse_alarm_data(payload, topic)
+
+    # 환경 데이터인 경우
     if is_environment_data(payload):
         return parse_environment_data(payload, topic)
 
@@ -66,4 +82,11 @@ __all__ = [
     'is_environment_data',
     'parse_mqtt_data',
     'DATA_FIELD_MAPPING',
+    # 알람 관련
+    'AlarmParser',
+    'ParsedAlarmData',
+    'parse_alarm_data',
+    'get_alarm_parser',
+    'is_alarm_topic',
+    'TOPIC_SENSOR_MAPPING',
 ]

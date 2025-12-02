@@ -865,3 +865,250 @@ body {
         width: 100%;
     }
 }
+
+/* ===== 알람 페이지 스타일 ===== */
+.stats-grid {
+    margin-bottom: 2rem;
+}
+
+.stat-card.alarm-warning {
+    border-left: 4px solid var(--danger-color);
+}
+
+.stat-card.alarm-warning .stat-value {
+    color: var(--danger-color);
+}
+
+/* 섹션 스타일 */
+.section {
+    background: white;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow);
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--primary-color);
+}
+
+.section-header h2 {
+    color: var(--dark-color);
+    font-size: 1.3rem;
+    margin: 0;
+}
+
+/* 알람 카드 리스트 */
+.alarm-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+}
+
+.alarm-card {
+    background: #f8f9fa;
+    border-radius: var(--border-radius);
+    border-left: 4px solid #999;
+    overflow: hidden;
+}
+
+.alarm-card.unacknowledged {
+    background: #fff5f5;
+    animation: pulse-border 2s infinite;
+}
+
+.alarm-card.level-2 {
+    border-left-color: #e67e22;
+}
+
+.alarm-card.level-3 {
+    border-left-color: #e74c3c;
+}
+
+@keyframes pulse-border {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.4); }
+    50% { box-shadow: 0 0 0 5px rgba(231, 76, 60, 0); }
+}
+
+.alarm-header {
+    padding: 0.8rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.alarm-level {
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    color: white;
+}
+
+.alarm-sensor {
+    font-weight: 500;
+    color: var(--dark-color);
+}
+
+.alarm-time {
+    font-size: 0.8rem;
+    color: var(--text-light);
+    margin-left: auto;
+}
+
+.alarm-body {
+    padding: 0.8rem 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.alarm-body > div {
+    margin-bottom: 0.3rem;
+    font-size: 0.9rem;
+}
+
+.alarm-footer {
+    padding: 0.8rem 1rem;
+    background: rgba(0, 0, 0, 0.02);
+    border-top: 1px solid var(--border-color);
+}
+
+/* 버튼 추가 스타일 */
+.btn-outline {
+    background: transparent;
+    border: 1px solid var(--primary-color);
+    color: var(--primary-color);
+}
+
+.btn-outline:hover {
+    background: var(--primary-color);
+    color: white;
+}
+
+.btn-sm {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+}
+
+.btn-xs {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.75rem;
+}
+
+/* 알람 배지 */
+.alarm-badge {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    color: white;
+}
+
+/* 상태 배지 */
+.status-badge {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    border-radius: 10px;
+    font-size: 0.75rem;
+}
+
+.status-badge.acknowledged {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.status-badge.pending {
+    background-color: #fff3cd;
+    color: #856404;
+}
+
+/* 미확인 행 스타일 */
+.data-table tr.unacknowledged {
+    background-color: #fff5f5;
+}
+
+.data-table tr.unacknowledged:hover {
+    background-color: #ffebeb;
+}
+
+/* 센서별 통계 그리드 */
+.sensor-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 1rem;
+}
+
+.sensor-stat-card {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: var(--border-radius);
+    text-align: center;
+}
+
+.sensor-stat-name {
+    font-size: 0.85rem;
+    color: var(--text-light);
+    margin-bottom: 0.3rem;
+}
+
+.sensor-stat-count {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--primary-color);
+}
+
+/* 빈 상태 */
+.empty-state {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-light);
+}
+
+/* 텍스트 정렬 */
+.text-center {
+    text-align: center;
+}
+
+/* 알람 알림 팝업 */
+.alarm-notification {
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    background: white;
+    border-left: 4px solid var(--danger-color);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    padding: 1rem;
+    border-radius: var(--border-radius);
+    z-index: 1000;
+    animation: slideIn 0.3s ease-out;
+    max-width: 300px;
+}
+
+.alarm-notification strong {
+    color: var(--danger-color);
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.alarm-notification p {
+    margin: 0.3rem 0;
+    font-size: 0.9rem;
+    color: var(--text-color);
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
