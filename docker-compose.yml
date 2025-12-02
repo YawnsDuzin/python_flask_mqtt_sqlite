@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  # Mosquitto MQTT 브로커
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    container_name: mqtt_broker
+    ports:
+      - "1883:1883"     # MQTT
+      - "9001:9001"     # WebSocket
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    restart: unless-stopped
+
+  # Flask 애플리케이션 (선택적)
+  # 개발 시에는 로컬에서 실행하고, 배포 시 활성화
+  # app:
+  #   build: .
+  #   container_name: flask_mqtt_app
+  #   ports:
+  #     - "5000:5000"
+  #   environment:
+  #     - FLASK_ENV=production
+  #     - MQTT_BROKER_HOST=mosquitto
+  #   depends_on:
+  #     - mosquitto
+  #   volumes:
+  #     - ./instance:/app/instance
+  #   restart: unless-stopped
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:

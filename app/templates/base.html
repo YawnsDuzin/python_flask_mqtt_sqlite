@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}MQTT 센서 모니터링{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <a href="{{ url_for('main.index') }}">MQTT Sensor Monitor</a>
+        </div>
+        <ul class="nav-links">
+            <li><a href="{{ url_for('main.index') }}" class="{% if request.endpoint == 'main.index' %}active{% endif %}">대시보드</a></li>
+            <li><a href="{{ url_for('main.sensors_page') }}" class="{% if request.endpoint == 'main.sensors_page' %}active{% endif %}">센서 목록</a></li>
+        </ul>
+        <div class="nav-status">
+            <span id="mqtt-status" class="status-indicator disconnected">MQTT: 연결 중...</span>
+        </div>
+    </nav>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+        <p>MQTT Sensor Monitoring System &copy; 2025</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

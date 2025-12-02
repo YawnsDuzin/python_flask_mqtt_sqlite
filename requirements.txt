@@ -1,0 +1,23 @@
+# Flask 웹 프레임워크
+Flask>=3.0.0
+
+# Flask 확장
+Flask-SocketIO>=5.3.0
+
+# MQTT 클라이언트
+paho-mqtt>=2.0.0
+
+# 환경 변수 관리
+python-dotenv>=1.0.0
+
+# WebSocket 지원
+eventlet>=0.34.0
+# 또는 gevent>=23.9.0 (eventlet 대체 가능)
+
+# 개발/테스트
+pytest>=8.0.0
+pytest-cov>=4.1.0
+
+# 코드 품질
+flake8>=7.0.0
+black>=24.0.0

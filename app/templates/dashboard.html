@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}대시보드 - MQTT 센서 모니터링{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <header class="page-header">
+        <h1>실시간 센서 대시보드</h1>
+        <div class="header-actions">
+            <button id="refresh-btn" class="btn btn-primary">새로고침</button>
+            <span id="last-update">마지막 업데이트: -</span>
+        </div>
+    </header>
+
+    <!-- 시스템 상태 카드 -->
+    <section class="status-cards">
+        <div class="card status-card">
+            <div class="card-icon mqtt-icon">
+                <svg viewBox="0 0 24 24" width="24" height="24">
+                    <path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                </svg>
+            </div>
+            <div class="card-content">
+                <h3>MQTT 상태</h3>
+                <p id="mqtt-connection-status">확인 중...</p>
+            </div>
+        </div>
+
+        <div class="card status-card">
+            <div class="card-icon sensor-icon">
+                <svg viewBox="0 0 24 24" width="24" height="24">
+                    <path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
+                </svg>
+            </div>
+            <div class="card-content">
+                <h3>활성 센서</h3>
+                <p id="active-sensors-count">0개</p>
+            </div>
+        </div>
+
+        <div class="card status-card">
+            <div class="card-icon data-icon">
+                <svg viewBox="0 0 24 24" width="24" height="24">
+                    <path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/>
+                </svg>
+            </div>
+            <div class="card-content">
+                <h3>총 데이터</h3>
+                <p id="total-data-count">0건</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- 센서별 최신 데이터 -->
+    <section class="sensor-data-section">
+        <h2>센서별 최신 데이터</h2>
+        <div id="sensor-cards" class="sensor-cards-grid">
+            <p class="loading-message">데이터를 불러오는 중...</p>
+        </div>
+    </section>
+
+    <!-- 최근 수신 데이터 -->
+    <section class="recent-data-section">
+        <h2>최근 수신 데이터</h2>
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>센서 ID</th>
+                        <th>타입</th>
+                        <th>값</th>
+                        <th>단위</th>
+                        <th>수신 시간</th>
+                    </tr>
+                </thead>
+                <tbody id="recent-data-body">
+                    <tr>
+                        <td colspan="5" class="loading-message">데이터를 불러오는 중...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- 실시간 로그 -->
+    <section class="realtime-log-section">
+        <h2>실시간 로그</h2>
+        <div id="realtime-log" class="log-container">
+            <p class="log-message info">시스템 시작됨...</p>
+        </div>
+    </section>
+</div>
+{% endblock %}
