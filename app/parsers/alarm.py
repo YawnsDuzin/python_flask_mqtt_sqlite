@@ -22,7 +22,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
-from app.models.database import AlarmLog, ALARM_SENSOR_TYPES, ALARM_LEVELS, SENSOR_TYPES
+from app.models.database import AlarmLog, ALARM_LEVELS, SENSOR_TYPES, get_alarm_sensor_types
 
 logger = logging.getLogger(__name__)
 
@@ -189,8 +189,9 @@ class AlarmParser:
             logger.warning(f"알 수 없는 센서 타입: {sensor_raw}")
             return None
 
-        # 알람 대상 센서인지 확인
-        if sensor_type not in ALARM_SENSOR_TYPES:
+        # 알람 대상 센서인지 확인 (config에서 동적 로드)
+        alarm_sensor_types = get_alarm_sensor_types()
+        if sensor_type not in alarm_sensor_types:
             logger.warning(f"알람 대상이 아닌 센서: {sensor_type}")
             return None
 
@@ -260,7 +261,7 @@ class AlarmParser:
     def _parse_time(self, time_str: str) -> Optional[str]:
         """시간 파싱"""
         if not time_str or time_str == '':
-            return datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+            return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
         # 다양한 형식 지원
         formats = [

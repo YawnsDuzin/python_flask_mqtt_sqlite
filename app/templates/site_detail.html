@@ -61,17 +61,17 @@
             {% for device in devices %}
             <div class="device-card">
                 <div class="device-card-header">
-                    <span class="device-no-badge">{{ device.device_no }}</span>
+                    <span class="device-no-badge">{{ device.device_id }}</span>
                     <span class="device-status {{ 'active' if device.is_active else 'inactive' }}">
                         {{ '활성' if device.is_active else '비활성' }}
                     </span>
                 </div>
                 <div class="device-card-body">
-                    <h3>{{ device.name or device.device_no }}</h3>
+                    <h3>{{ device.name or device.device_id }}</h3>
                     <p class="device-description">{{ device.description or '설명 없음' }}</p>
                 </div>
                 <div class="device-card-footer">
-                    <a href="{{ url_for('main.device_detail', device_no=device.device_no) }}" class="btn btn-small">상세 보기</a>
+                    <a href="{{ url_for('main.device_detail', device_id=device.device_id) }}" class="btn btn-small">상세 보기</a>
                 </div>
             </div>
             {% endfor %}

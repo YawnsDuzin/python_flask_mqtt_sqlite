@@ -266,7 +266,7 @@ class EnvironmentParser:
     def _parse_check_time(self, check_time: str) -> Optional[str]:
         """checkTime 파싱"""
         if not check_time or check_time == '':
-            return datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+            return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
         # 다양한 형식 지원
         formats = [

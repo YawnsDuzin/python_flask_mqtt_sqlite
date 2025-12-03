@@ -69,7 +69,7 @@ function initSocketIO() {
         updateDeviceCard(data);
         addRecentDataRow(data);
         updateSensorValues(data);
-        addLog(`데이터 수신: ${data.device_no} (${data.site_code})`, 'info');
+        addLog(`데이터 수신: ${data.device_id} (${data.site_code})`, 'info');
         updateLastUpdateTime();
     });
 
@@ -86,6 +86,13 @@ function initSocketIO() {
     socket.on('error', (data) => {
         console.error('오류:', data);
         addLog(`오류: ${data.message}`, 'error');
+    });
+
+    // 실시간 알람 수신 (모든 페이지에서 동작)
+    socket.on('alarm', (data) => {
+        console.log('알람 수신:', data);
+        showAlarmNotification(data);
+        addLog(`알람: ${data.sensor_name || data.sensor_type} - ${data.value} (레벨: ${data.level})`, 'warning');
     });
 }
 
@@ -206,6 +213,93 @@ function updateSensorValues(data) {
 }
 
 /**
+ * 장치 카드 센서 그룹 HTML 생성
+ */
+function createDeviceSensorGroupsHTML(device) {
+    return `
+        <div class="device-sensor-layout">
+            <!-- 왼쪽 열: 가스 센서 -->
+            <div class="device-sensor-column">
+                <div class="device-sensor-group gas-group">
+                    <h4><span class="group-icon">⚗️</span>가스 센서</h4>
+                    <div class="device-sensor-list">
+                        <div class="device-sensor-item">
+                            <span class="sensor-label">산소 (O2)</span>
+                            <span><span class="sensor-value">${formatValue(device.o2, 1)}</span><span class="sensor-unit">%</span></span>
+                        </div>
+                        <div class="device-sensor-item">
+                            <span class="sensor-label">이산화질소 (NO2)</span>
+                            <span><span class="sensor-value">${formatValue(device.no2, 2)}</span><span class="sensor-unit">ppm</span></span>
+                        </div>
+                        <div class="device-sensor-item">
+                            <span class="sensor-label">일산화탄소 (CO)</span>
+                            <span><span class="sensor-value">${formatValue(device.co, 1)}</span><span class="sensor-unit">ppm</span></span>
+                        </div>
+                        <div class="device-sensor-item">
+                            <span class="sensor-label">이산화탄소 (CO2)</span>
+                            <span><span class="sensor-value">${formatValue(device.co2, 0)}</span><span class="sensor-unit">ppm</span></span>
+                        </div>
+                        <div class="device-sensor-item">
+                            <span class="sensor-label">황화수소 (H2S)</span>
+                            <span><span class="sensor-value">${formatValue(device.h2s, 1)}</span><span class="sensor-unit">ppm</span></span>
+                        </div>
+                        <div class="device-sensor-item">
+                            <span class="sensor-label">메탄 (CH4)</span>
+                            <span><span class="sensor-value">${formatValue(device.ch4, 1)}</span><span class="sensor-unit">%LEL</span></span>
+                        </div>
+                        <div class="device-sensor-item">
+                            <span class="sensor-label">폼알데하이드 (CH2O)</span>
+                            <span><span class="sensor-value">${formatValue(device.ch2o, 2)}</span><span class="sensor-unit">ppm</span></span>
+                        </div>
+                        <div class="device-sensor-item">
+                            <span class="sensor-label">오존 (O3)</span>
+                            <span><span class="sensor-value">${formatValue(device.o3, 2)}</span><span class="sensor-unit">ppm</span></span>
+                        </div>
+                        <div class="device-sensor-item">
+                            <span class="sensor-label">VOC</span>
+                            <span><span class="sensor-value">${formatValue(device.voc, 1)}</span><span class="sensor-unit">ppm</span></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- 오른쪽 열: 미세먼지 + 환경 -->
+            <div class="device-sensor-column">
+                <div class="device-sensor-group dust-group">
+                    <h4><span class="group-icon">🌫️</span>미세먼지</h4>
+                    <div class="device-sensor-list">
+                        <div class="device-sensor-item">
+                            <span class="sensor-label">PM1.0</span>
+                            <span><span class="sensor-value">${formatValue(device.pm1, 0)}</span><span class="sensor-unit">μg/m³</span></span>
+                        </div>
+                        <div class="device-sensor-item">
+                            <span class="sensor-label">PM2.5</span>
+                            <span><span class="sensor-value">${formatValue(device.pm25, 0)}</span><span class="sensor-unit">μg/m³</span></span>
+                        </div>
+                        <div class="device-sensor-item">
+                            <span class="sensor-label">PM10</span>
+                            <span><span class="sensor-value">${formatValue(device.pm10, 0)}</span><span class="sensor-unit">μg/m³</span></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="device-sensor-group env-group">
+                    <h4><span class="group-icon">🌡️</span>환경</h4>
+                    <div class="device-sensor-list">
+                        <div class="device-sensor-item">
+                            <span class="sensor-label">온도</span>
+                            <span><span class="sensor-value">${formatValue(device.temp, 1)}</span><span class="sensor-unit">°C</span></span>
+                        </div>
+                        <div class="device-sensor-item">
+                            <span class="sensor-label">습도</span>
+                            <span><span class="sensor-value">${formatValue(device.humi, 1)}</span><span class="sensor-unit">%</span></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+/**
  * 장치 카드 렌더링
  */
 function renderDeviceCards(data) {
@@ -217,38 +311,13 @@ function renderDeviceCards(data) {
     }
 
     elements.deviceCards.innerHTML = data.map(device => `
-        <div class="device-data-card" data-device-no="${device.device_no}">
+        <div class="device-data-card" data-device-id="${device.device_id}">
             <div class="card-header">
-                <h3>${device.device_no}</h3>
+                <h3>${device.device_id}</h3>
                 <span class="site-code-badge">${device.site_code || '-'}</span>
             </div>
             <div class="card-body">
-                <div class="env-values-grid">
-                    <div class="env-value-item">
-                        <span class="label">O2</span>
-                        <span class="value">${formatValue(device.o2, 1)}%</span>
-                    </div>
-                    <div class="env-value-item">
-                        <span class="label">CO</span>
-                        <span class="value">${formatValue(device.co, 1)}ppm</span>
-                    </div>
-                    <div class="env-value-item">
-                        <span class="label">CO2</span>
-                        <span class="value">${formatValue(device.co2, 0)}ppm</span>
-                    </div>
-                    <div class="env-value-item">
-                        <span class="label">온도</span>
-                        <span class="value">${formatValue(device.temp, 1)}C</span>
-                    </div>
-                    <div class="env-value-item">
-                        <span class="label">습도</span>
-                        <span class="value">${formatValue(device.humi, 1)}%</span>
-                    </div>
-                    <div class="env-value-item">
-                        <span class="label">PM2.5</span>
-                        <span class="value">${formatValue(device.pm25, 0)}ug/m3</span>
-                    </div>
-                </div>
+                ${createDeviceSensorGroupsHTML(device)}
                 <div class="device-timestamp">${formatTimestamp(device.received_at)}</div>
             </div>
         </div>
@@ -261,38 +330,13 @@ function renderDeviceCards(data) {
 function updateDeviceCard(data) {
     if (!elements.deviceCards) return;
 
-    const existingCard = elements.deviceCards.querySelector(`[data-device-no="${data.device_no}"]`);
+    const existingCard = elements.deviceCards.querySelector(`[data-device-id="${data.device_id}"]`);
 
     if (existingCard) {
-        // 기존 카드 업데이트
-        const valuesGrid = existingCard.querySelector('.env-values-grid');
-        if (valuesGrid) {
-            valuesGrid.innerHTML = `
-                <div class="env-value-item">
-                    <span class="label">O2</span>
-                    <span class="value">${formatValue(data.o2, 1)}%</span>
-                </div>
-                <div class="env-value-item">
-                    <span class="label">CO</span>
-                    <span class="value">${formatValue(data.co, 1)}ppm</span>
-                </div>
-                <div class="env-value-item">
-                    <span class="label">CO2</span>
-                    <span class="value">${formatValue(data.co2, 0)}ppm</span>
-                </div>
-                <div class="env-value-item">
-                    <span class="label">온도</span>
-                    <span class="value">${formatValue(data.temp, 1)}C</span>
-                </div>
-                <div class="env-value-item">
-                    <span class="label">습도</span>
-                    <span class="value">${formatValue(data.humi, 1)}%</span>
-                </div>
-                <div class="env-value-item">
-                    <span class="label">PM2.5</span>
-                    <span class="value">${formatValue(data.pm25, 0)}ug/m3</span>
-                </div>
-            `;
+        // 기존 카드 업데이트 - 센서 그룹 레이아웃 교체
+        const sensorLayout = existingCard.querySelector('.device-sensor-layout');
+        if (sensorLayout) {
+            sensorLayout.outerHTML = createDeviceSensorGroupsHTML(data);
         }
 
         const timestampEl = existingCard.querySelector('.device-timestamp');
@@ -314,39 +358,14 @@ function updateDeviceCard(data) {
 
         const newCard = document.createElement('div');
         newCard.className = 'device-data-card';
-        newCard.dataset.deviceNo = data.device_no;
+        newCard.dataset.deviceId = data.device_id;
         newCard.innerHTML = `
             <div class="card-header">
-                <h3>${data.device_no}</h3>
+                <h3>${data.device_id}</h3>
                 <span class="site-code-badge">${data.site_code || '-'}</span>
             </div>
             <div class="card-body">
-                <div class="env-values-grid">
-                    <div class="env-value-item">
-                        <span class="label">O2</span>
-                        <span class="value">${formatValue(data.o2, 1)}%</span>
-                    </div>
-                    <div class="env-value-item">
-                        <span class="label">CO</span>
-                        <span class="value">${formatValue(data.co, 1)}ppm</span>
-                    </div>
-                    <div class="env-value-item">
-                        <span class="label">CO2</span>
-                        <span class="value">${formatValue(data.co2, 0)}ppm</span>
-                    </div>
-                    <div class="env-value-item">
-                        <span class="label">온도</span>
-                        <span class="value">${formatValue(data.temp, 1)}C</span>
-                    </div>
-                    <div class="env-value-item">
-                        <span class="label">습도</span>
-                        <span class="value">${formatValue(data.humi, 1)}%</span>
-                    </div>
-                    <div class="env-value-item">
-                        <span class="label">PM2.5</span>
-                        <span class="value">${formatValue(data.pm25, 0)}ug/m3</span>
-                    </div>
-                </div>
+                ${createDeviceSensorGroupsHTML(data)}
                 <div class="device-timestamp">${formatTimestamp(data.received_at || new Date().toISOString())}</div>
             </div>
         `;
@@ -372,7 +391,7 @@ function renderRecentData(data) {
 
     elements.recentDataBody.innerHTML = data.map(item => `
         <tr>
-            <td>${item.device_no}</td>
+            <td>${item.device_id}</td>
             <td>${item.site_code || '-'}</td>
             <td>${formatValue(item.o2, 1)}</td>
             <td>${formatValue(item.co, 1)}</td>
@@ -400,7 +419,7 @@ function addRecentDataRow(data) {
     // 새 행 추가
     const newRow = document.createElement('tr');
     newRow.innerHTML = `
-        <td>${data.device_no}</td>
+        <td>${data.device_id}</td>
         <td>${data.site_code || '-'}</td>
         <td>${formatValue(data.o2, 1)}</td>
         <td>${formatValue(data.co, 1)}</td>
@@ -424,6 +443,52 @@ function addRecentDataRow(data) {
     setTimeout(() => {
         newRow.style.backgroundColor = '';
     }, 1000);
+}
+
+/**
+ * 알람 알림 팝업 표시
+ */
+function showAlarmNotification(data) {
+    // 알람 레벨 정보
+    const levelInfo = {
+        0: { name: '정상', color: '#28a745' },
+        1: { name: '주의', color: '#ffc107' },
+        2: { name: '경고', color: '#fd7e14' },
+        3: { name: '위험', color: '#dc3545' }
+    };
+
+    const level = parseInt(data.level) || 0;
+    const levelData = levelInfo[level] || levelInfo[0];
+    const sensorName = data.sensor_name || data.sensor_type || '알 수 없음';
+    const sensorUnit = data.sensor_unit || '';
+    const deviceId = data.device_id || '-';
+
+    // 알림 요소 생성
+    const notification = document.createElement('div');
+    notification.className = 'alarm-notification';
+    notification.style.borderLeftColor = levelData.color;
+    notification.innerHTML = `
+        <strong style="color: ${levelData.color}">새 알람! [${levelData.name}]</strong>
+        <p><b>${sensorName}</b>: ${data.value} ${sensorUnit}</p>
+        <p>장치: ${deviceId}</p>
+        ${data.etc ? `<p>메모: ${data.etc}</p>` : ''}
+    `;
+
+    // 기존 알림들 위치 조정
+    const existingNotifications = document.querySelectorAll('.alarm-notification');
+    existingNotifications.forEach((el, index) => {
+        el.style.top = `${80 + (index + 1) * 110}px`;
+    });
+
+    document.body.appendChild(notification);
+
+    // 5초 후 알림 제거
+    setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease-in forwards';
+        setTimeout(() => {
+            notification.remove();
+        }, 300);
+    }, 5000);
 }
 
 /**

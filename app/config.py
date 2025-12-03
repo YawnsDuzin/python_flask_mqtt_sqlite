@@ -42,6 +42,23 @@ class Config:
     # 로깅 설정
     LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
 
+    # 알람 대상 센서 타입 (쉼표로 구분)
+    _alarm_sensors = os.getenv('ALARM_SENSOR_TYPES', 'o2,no2,co,co2,h2s,ch4,ch2o,o3')
+    ALARM_SENSOR_TYPES = [s.strip().lower() for s in _alarm_sensors.split(',')]
+
+    # 환경 데이터 DB 저장 설정 (평균값 저장 간격)
+    MQTT_DATA_SAVE_INTERVAL = int(os.getenv('MQTT_DATA_SAVE_INTERVAL', '10'))
+
+    # MQTT 포워딩 설정 (두 번째 브로커)
+    MQTT_FORWARD_ENABLED = os.getenv('MQTT_FORWARD_ENABLED', 'false').lower() == 'true'
+    MQTT_FORWARD_HOST = os.getenv('MQTT_FORWARD_HOST', '')
+    MQTT_FORWARD_PORT = int(os.getenv('MQTT_FORWARD_PORT', '1883'))
+    MQTT_FORWARD_USERNAME = os.getenv('MQTT_FORWARD_USERNAME', '')
+    MQTT_FORWARD_PASSWORD = os.getenv('MQTT_FORWARD_PASSWORD', '')
+    MQTT_FORWARD_CLIENT_ID = os.getenv('MQTT_FORWARD_CLIENT_ID', 'flask_mqtt_forwarder')
+    MQTT_FORWARD_TOPIC_PREFIX = os.getenv('MQTT_FORWARD_TOPIC_PREFIX', 'forwarded')
+    MQTT_FORWARD_INTERVAL = int(os.getenv('MQTT_FORWARD_INTERVAL', '10'))
+
 
 class DevelopmentConfig(Config):
     """개발 환경 설정"""

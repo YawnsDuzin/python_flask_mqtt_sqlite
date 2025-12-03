@@ -54,17 +54,17 @@ class EnvironmentSensorSimulator:
 
         # 가상 장치 정의
         self.devices = {
-            'DEV001': {
+            '1': {
                 'h_cd': 'H001',
                 's_cd': 'S0001',
                 'location': '지하 1층 기계실'
             },
-            'DEV002': {
+            '2': {
                 'h_cd': 'H001',
                 's_cd': 'S0001',
                 'location': '지하 2층 주차장'
             },
-            'DEV003': {
+            '3': {
                 'h_cd': 'H002',
                 's_cd': 'S0001',
                 'location': '건물 A 지하실'
@@ -138,6 +138,9 @@ class EnvironmentSensorSimulator:
         for i in range(1, 15):
             key = f'data{i}'
             payload[key] = self.generate_sensor_value(key)
+
+        # 체크 시간 추가 (로컬 시간)
+        payload['checkTime'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
         return payload
 

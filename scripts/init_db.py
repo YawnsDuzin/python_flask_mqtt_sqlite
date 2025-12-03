@@ -32,9 +32,9 @@ def main():
 
     # 샘플 현장 등록
     sample_sites = [
-        Site(h_cd="H001", s_cd="S0001", name="지하공간 A동", description="A동 지하 환경 모니터링"),
-        Site(h_cd="H001", s_cd="S0002", name="지하공간 B동", description="B동 지하 환경 모니터링"),
-        Site(h_cd="H002", s_cd="S0001", name="밀폐공간 1구역", description="밀폐공간 1구역 모니터링"),
+        Site(site_code="H001S0001", h_cd="H001", s_cd="S0001", name="지하공간 A동", description="A동 지하 환경 모니터링"),
+        Site(site_code="H001S0002", h_cd="H001", s_cd="S0002", name="지하공간 B동", description="B동 지하 환경 모니터링"),
+        Site(site_code="H002S0001", h_cd="H002", s_cd="S0001", name="밀폐공간 1구역", description="밀폐공간 1구역 모니터링"),
     ]
 
     print("\n현장 등록:")
@@ -47,19 +47,19 @@ def main():
 
     # 샘플 장치 등록
     sample_devices = [
-        Device(device_no="DEV001", site_code="H001S0001", name="1층 기계실 센서", description="기계실 환경 모니터링"),
-        Device(device_no="DEV002", site_code="H001S0001", name="2층 주차장 센서", description="지하주차장 환경 모니터링"),
-        Device(device_no="DEV003", site_code="H001S0002", name="B동 창고 센서", description="창고 환경 모니터링"),
-        Device(device_no="DEV004", site_code="H002S0001", name="밀폐공간 센서 A", description="밀폐공간 가스 모니터링"),
+        Device(device_id="H001S0001_1", site_code="H001S0001", dv_no="1", name="1층 기계실 센서", description="기계실 환경 모니터링"),
+        Device(device_id="H001S0001_2", site_code="H001S0001", dv_no="2", name="2층 주차장 센서", description="지하주차장 환경 모니터링"),
+        Device(device_id="H001S0002_1", site_code="H001S0002", dv_no="1", name="B동 창고 센서", description="창고 환경 모니터링"),
+        Device(device_id="H002S0001_1", site_code="H002S0001", dv_no="1", name="밀폐공간 센서 A", description="밀폐공간 가스 모니터링"),
     ]
 
     print("\n장치 등록:")
     for device in sample_devices:
         try:
             db.create_device(device)
-            print(f"  [OK] {device.device_no} - {device.name}")
+            print(f"  [OK] {device.device_id} - {device.name}")
         except Exception as e:
-            print(f"  [SKIP] {device.device_no} ({e})")
+            print(f"  [SKIP] {device.device_id} ({e})")
 
     # 기본 알람 임계값 설정
     print("\n기본 알람 임계값 설정:")

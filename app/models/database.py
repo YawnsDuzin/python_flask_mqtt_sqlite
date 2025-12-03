@@ -117,11 +117,19 @@ ALARM_LEVELS = {
     3: {'name': '위험', 'name_en': 'Danger', 'color': '#e74c3c'},
 }
 
-# 알람 대상 센서 타입 (온도, 습도 제외한 12종)
-ALARM_SENSOR_TYPES = [
-    'o2', 'no2', 'co', 'co2', 'h2s', 'ch4',
-    'ch2o', 'o3', 'voc', 'pm1', 'pm25', 'pm10'
-]
+# 알람 대상 센서 타입 (config에서 로드, 기본값 제공)
+def get_alarm_sensor_types():
+    """config에서 알람 대상 센서 타입 목록 반환"""
+    try:
+        from app.config import get_config
+        config = get_config()
+        return config.ALARM_SENSOR_TYPES
+    except Exception:
+        # 기본값 (config 로드 실패 시)
+        return ['o2', 'no2', 'co', 'co2', 'h2s', 'ch4', 'ch2o', 'o3']
+
+# 하위 호환성을 위한 기본 상수 (동적 로드 권장)
+ALARM_SENSOR_TYPES = ['o2', 'no2', 'co', 'co2', 'h2s', 'ch4', 'ch2o', 'o3']
 
 
 # 센서 데이터 타입 정의 (단위 포함)
@@ -363,6 +371,69 @@ class Database:
             cursor.execute(sql)
             return [Site(**dict(row)) for row in cursor.fetchall()]
 
+    def update_site(self, site_code: str, **kwargs) -> bool:
+        """현장 정보 수정"""
+        allowed_fields = ['name', 'location', 'description', 'is_active']
+        updates = []
+        params = []
+
+        for field in allowed_fields:
+            if field in kwargs:
+                updates.append(f"{field} = ?")
+                params.append(kwargs[field])
+
+        if not updates:
+            return False
+
+        updates.append("updated_at = CURRENT_TIMESTAMP")
+        sql = f"UPDATE sites SET {', '.join(updates)} WHERE site_code = ?"
+        params.append(site_code)
+
+        with self.get_cursor() as cursor:
+            cursor.execute(sql, params)
+            return cursor.rowcount > 0
+
+    def delete_site(self, site_code: str) -> bool:
+        """현장 삭제 (연결된 장치가 없는 경우만)"""
+        sql = "DELETE FROM sites WHERE site_code = ?"
+        with self.get_cursor() as cursor:
+            cursor.execute(sql, (site_code,))
+            return cursor.rowcount > 0
+
+    def get_site_device_count(self, site_code: str) -> int:
+        """현장에 연결된 장치 수 조회"""
+        sql = "SELECT COUNT(*) FROM devices WHERE site_code = ?"
+        with self.get_cursor() as cursor:
+            cursor.execute(sql, (site_code,))
+            return cursor.fetchone()[0]
+
+    def create_site_manual(
+        self,
+        h_cd: str,
+        s_cd: str,
+        name: Optional[str] = None,
+        location: Optional[str] = None,
+        description: Optional[str] = None
+    ) -> int:
+        """수동 현장 생성 (중복 체크 포함)"""
+        site_code = f"{h_cd}{s_cd}"
+
+        # 중복 체크
+        existing = self.get_site(site_code)
+        if existing:
+            raise ValueError(f"현장 코드 '{site_code}'가 이미 존재합니다.")
+
+        site = Site(
+            site_code=site_code,
+            h_cd=h_cd,
+            s_cd=s_cd,
+            name=name,
+            location=location,
+            description=description,
+            is_active=True
+        )
+        return self.create_site(site)
+
     # ===== Device CRUD =====
 
     def create_device(self, device: Device) -> int:
@@ -411,6 +482,72 @@ class Database:
         with self.get_cursor() as cursor:
             cursor.execute(sql)
             return [Device(**dict(row)) for row in cursor.fetchall()]
+
+    def update_device(self, device_id: str, **kwargs) -> bool:
+        """장치 정보 수정"""
+        allowed_fields = ['name', 'description', 'is_active']
+        updates = []
+        params = []
+
+        for field in allowed_fields:
+            if field in kwargs:
+                updates.append(f"{field} = ?")
+                params.append(kwargs[field])
+
+        if not updates:
+            return False
+
+        updates.append("updated_at = CURRENT_TIMESTAMP")
+        sql = f"UPDATE devices SET {', '.join(updates)} WHERE device_id = ?"
+        params.append(device_id)
+
+        with self.get_cursor() as cursor:
+            cursor.execute(sql, params)
+            return cursor.rowcount > 0
+
+    def delete_device(self, device_id: str) -> bool:
+        """장치 삭제"""
+        sql = "DELETE FROM devices WHERE device_id = ?"
+        with self.get_cursor() as cursor:
+            cursor.execute(sql, (device_id,))
+            return cursor.rowcount > 0
+
+    def get_device_data_count(self, device_id: str) -> int:
+        """장치의 환경 데이터 수 조회"""
+        sql = "SELECT COUNT(*) FROM environment_data WHERE device_id = ?"
+        with self.get_cursor() as cursor:
+            cursor.execute(sql, (device_id,))
+            return cursor.fetchone()[0]
+
+    def create_device_manual(
+        self,
+        site_code: str,
+        dv_no: str,
+        name: Optional[str] = None,
+        description: Optional[str] = None
+    ) -> int:
+        """수동 장치 생성 (중복 체크 포함)"""
+        device_id = f"{site_code}_{dv_no}"
+
+        # 중복 체크
+        existing = self.get_device(device_id)
+        if existing:
+            raise ValueError(f"장치 ID '{device_id}'가 이미 존재합니다.")
+
+        # 현장 존재 확인
+        site = self.get_site(site_code)
+        if not site:
+            raise ValueError(f"현장 코드 '{site_code}'가 존재하지 않습니다.")
+
+        device = Device(
+            device_id=device_id,
+            site_code=site_code,
+            dv_no=dv_no,
+            name=name,
+            description=description,
+            is_active=True
+        )
+        return self.create_device(device)
 
     # ===== EnvironmentData CRUD =====
 

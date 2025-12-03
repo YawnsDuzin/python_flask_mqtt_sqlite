@@ -9,7 +9,8 @@ from flask import Flask
 from flask_socketio import SocketIO
 
 # SocketIO 인스턴스 (전역)
-socketio = SocketIO()
+# async_mode='threading'은 백그라운드 스레드에서 emit을 허용
+socketio = SocketIO(async_mode='threading')
 
 
 def create_app(config_name: str = None):

@@ -202,30 +202,14 @@ document.getElementById('btn-acknowledge-all')?.addEventListener('click', functi
     });
 });
 
-// 실시간 알람 수신
-if (typeof io !== 'undefined') {
-    const socket = io();
-
+// 실시간 알람 수신 시 페이지 새로고침 (알람 팝업은 dashboard.js에서 전역 처리)
+if (typeof socket !== 'undefined') {
     socket.on('alarm', function(data) {
-        console.log('New alarm received:', data);
-
-        // 새 알람 알림 표시
-        const notification = document.createElement('div');
-        notification.className = 'alarm-notification';
-        notification.innerHTML = `
-            <strong>새 알람!</strong>
-            <p>${data.sensor_name}: ${data.value} ${data.sensor_unit}</p>
-            <p>장치: ${data.device_id}</p>
-        `;
-        document.body.appendChild(notification);
-
-        // 3초 후 알림 제거
+        console.log('알람 페이지에서 알람 수신:', data);
+        // 알람 목록 자동 갱신 (5초 후)
         setTimeout(() => {
-            notification.remove();
+            location.reload();
         }, 5000);
-
-        // 페이지 새로고침 (선택사항)
-        // location.reload();
     });
 }
 </script>

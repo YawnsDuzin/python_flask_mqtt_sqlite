@@ -21,8 +21,15 @@ from app.parsers import (
     ParsedAlarmData
 )
 from app.models import get_db, Site, Device, EnvironmentData, MqttLog, AlarmLog, SENSOR_TYPES, ALARM_LEVELS
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
+
+# 평균 계산 대상 센서 필드
+SENSOR_FIELDS = [
+    'o2', 'no2', 'co', 'co2', 'h2s', 'ch4', 'ch2o', 'o3',
+    'voc', 'pm1', 'pm25', 'pm10', 'temp', 'humi'
+]
 
 
 class MQTTClient:
@@ -94,11 +101,194 @@ class MQTTClient:
         # SocketIO 인스턴스 (웹 실시간 업데이트용)
         self.socketio = None
 
+        # MQTT 포워더 인스턴스
+        self.forwarder = None
+
+        # DB 저장용 데이터 버퍼 (장치별로 데이터 수집 후 평균 저장)
+        self._data_buffer: Dict[str, List[Dict]] = defaultdict(list)
+        self._buffer_lock = threading.Lock()
+        self._save_interval = 10  # 기본 10초 (init_mqtt_client에서 설정)
+        self._save_thread: Optional[threading.Thread] = None
+
         logger.info(f"MQTT 클라이언트 초기화: {broker_host}:{broker_port}")
 
     def set_socketio(self, socketio):
         """SocketIO 인스턴스 설정"""
         self.socketio = socketio
+
+    def set_forwarder(self, forwarder):
+        """MQTT 포워더 인스턴스 설정"""
+        self.forwarder = forwarder
+
+    def set_save_interval(self, interval: int):
+        """DB 저장 간격 설정 (초)"""
+        self._save_interval = interval
+        logger.info(f"DB 저장 간격 설정: {interval}초")
+
+    def _start_save_thread(self):
+        """평균 데이터 DB 저장 스레드 시작"""
+        self._save_thread = threading.Thread(
+            target=self._save_loop,
+            daemon=True,
+            name="mqtt-data-saver"
+        )
+        self._save_thread.start()
+        logger.info(f"DB 저장 스레드 시작됨 (간격: {self._save_interval}초)")
+
+    def _save_loop(self):
+        """주기적으로 버퍼의 데이터를 평균 계산하여 DB에 저장"""
+        while not self._stop_flag:
+            try:
+                time.sleep(self._save_interval)
+
+                if self._stop_flag:
+                    break
+
+                self._flush_and_save_buffer()
+
+            except Exception as e:
+                logger.error(f"DB 저장 루프 오류: {e}")
+
+    def _flush_and_save_buffer(self):
+        """버퍼의 데이터를 평균 계산하여 DB에 저장"""
+        # 버퍼에서 데이터 추출 및 클리어
+        with self._buffer_lock:
+            if not self._data_buffer:
+                return
+
+            # 버퍼 복사 후 클리어
+            buffers_to_process = dict(self._data_buffer)
+            self._data_buffer = defaultdict(list)
+
+        total_devices = len(buffers_to_process)
+        total_samples = sum(len(v) for v in buffers_to_process.values())
+
+        if total_samples == 0:
+            return
+
+        logger.info(f"평균 DB 저장 시작: {total_devices}개 장치, {total_samples}건 데이터")
+
+        # 장치별 평균 계산 및 저장
+        saved_count = 0
+
+        for device_id, data_list in buffers_to_process.items():
+            if not data_list:
+                continue
+
+            try:
+                # 평균 데이터 계산
+                averaged_data = self._calculate_average(device_id, data_list)
+
+                if averaged_data:
+                    # DB에 저장
+                    self._save_averaged_to_db(averaged_data, data_list[0])
+                    saved_count += 1
+
+            except Exception as e:
+                logger.error(f"장치 {device_id} 평균 저장 오류: {e}")
+
+        logger.info(f"평균 DB 저장 완료: {saved_count}개 장치 저장됨")
+
+    def _calculate_average(self, device_id: str, data_list: List[Dict]) -> Optional[Dict]:
+        """장치별 센서 데이터의 평균 계산"""
+        if not data_list:
+            return None
+
+        # 첫 번째 데이터에서 메타 정보 추출
+        first_data = data_list[0]
+
+        # 센서별 값 수집
+        sensor_values: Dict[str, List[float]] = defaultdict(list)
+
+        for item in data_list:
+            for field in SENSOR_FIELDS:
+                value = item.get(field)
+                if value is not None:
+                    try:
+                        sensor_values[field].append(float(value))
+                    except (ValueError, TypeError):
+                        pass
+
+        # 평균 계산
+        averaged = {
+            'device_id': device_id,
+            'site_code': first_data.get('site_code', ''),
+            'h_cd': first_data.get('h_cd', ''),
+            's_cd': first_data.get('s_cd', ''),
+            'dv_no': first_data.get('dv_no', ''),
+            'sample_count': len(data_list),
+        }
+
+        # 각 센서별 평균값 계산
+        for field, values in sensor_values.items():
+            if values:
+                avg_value = sum(values) / len(values)
+                # 적절한 소수점 자리수로 반올림
+                if field in ['co2', 'pm1', 'pm25', 'pm10']:
+                    averaged[field] = round(avg_value)
+                else:
+                    averaged[field] = round(avg_value, 2)
+
+        logger.debug(f"평균 계산 완료: {device_id} ({len(data_list)}건 → 평균)")
+
+        return averaged
+
+    def _save_averaged_to_db(self, averaged_data: Dict, first_raw: Dict):
+        """평균 데이터를 DB에 저장"""
+        try:
+            db = get_db()
+
+            # 현장 정보 생성/업데이트
+            site = Site(
+                site_code=averaged_data['site_code'],
+                h_cd=averaged_data['h_cd'],
+                s_cd=averaged_data['s_cd']
+            )
+            db.create_site(site)
+
+            # 장치 정보 생성/업데이트
+            device = Device(
+                device_id=averaged_data['device_id'],
+                site_code=averaged_data['site_code'],
+                dv_no=averaged_data['dv_no']
+            )
+            db.create_device(device)
+
+            # 환경 데이터 저장 (평균값)
+            env_data = EnvironmentData(
+                device_id=averaged_data['device_id'],
+                site_code=averaged_data['site_code'],
+                h_cd=averaged_data['h_cd'],
+                s_cd=averaged_data['s_cd'],
+                dv_no=averaged_data['dv_no'],
+                o2=averaged_data.get('o2'),
+                no2=averaged_data.get('no2'),
+                co=averaged_data.get('co'),
+                co2=averaged_data.get('co2'),
+                h2s=averaged_data.get('h2s'),
+                ch4=averaged_data.get('ch4'),
+                ch2o=averaged_data.get('ch2o'),
+                o3=averaged_data.get('o3'),
+                voc=averaged_data.get('voc'),
+                pm1=averaged_data.get('pm1'),
+                pm25=averaged_data.get('pm25'),
+                pm10=averaged_data.get('pm10'),
+                temp=averaged_data.get('temp'),
+                humi=averaged_data.get('humi'),
+                check_time=first_raw.get('check_time'),
+                raw_payload=f"averaged:{averaged_data.get('sample_count', 1)} samples",
+                topic=first_raw.get('topic', ''),
+                qos=first_raw.get('qos', 0)
+            )
+            db.save_environment_data(env_data)
+
+            logger.debug(
+                f"평균 데이터 DB 저장: {averaged_data['device_id']} "
+                f"({averaged_data.get('sample_count', 1)}건 평균)"
+            )
+
+        except Exception as e:
+            logger.error(f"평균 데이터 DB 저장 오류: {e}")
 
     def connect(self) -> bool:
         """
@@ -130,11 +320,18 @@ class MQTTClient:
         """백그라운드에서 MQTT 루프 시작"""
         if self.connect():
             self.client.loop_start()
+            # DB 저장 스레드 시작
+            self._start_save_thread()
             logger.info("MQTT 클라이언트 시작됨")
 
     def stop(self):
         """MQTT 클라이언트 중지"""
         self._stop_flag = True
+
+        # 저장 스레드 종료 대기
+        if self._save_thread and self._save_thread.is_alive():
+            self._save_thread.join(timeout=5)
+
         self.client.loop_stop()
         self.disconnect()
         logger.info("MQTT 클라이언트 중지됨")
@@ -280,11 +477,20 @@ class MQTTClient:
             if parsed:
                 # 데이터 타입에 따라 처리
                 if isinstance(parsed, ParsedAlarmData):
-                    # 알람 데이터
+                    # 알람 데이터는 즉시 저장
                     self._save_alarm_data(parsed, topic, payload)
                 elif isinstance(parsed, ParsedEnvironmentData):
-                    # 환경 센서 데이터
-                    self._save_environment_data(parsed, topic, qos, payload)
+                    # 환경 센서 데이터: 버퍼에 추가 (평균 계산 후 저장)
+                    self._buffer_environment_data(parsed, topic, qos)
+
+                    # SocketIO로 실시간 전송 (UI 업데이트용)
+                    if self.socketio:
+                        self._emit_environment_data(parsed, topic)
+
+            # 포워더로 데이터 전송 (활성화된 경우)
+            if self.forwarder:
+                parsed_dict = self._parsed_to_dict(parsed) if isinstance(parsed, ParsedEnvironmentData) else None
+                self.forwarder.queue_data(topic, payload, qos, parsed_dict)
 
             # 외부 핸들러 호출
             for handler in self._message_handlers:
@@ -297,6 +503,64 @@ class MQTTClient:
             logger.error(f"메시지 처리 오류: {e}")
             self._log_mqtt_event('error', topic=topic, message=str(e))
 
+    def _parsed_to_dict(self, parsed: ParsedEnvironmentData) -> Dict:
+        """ParsedEnvironmentData를 딕셔너리로 변환"""
+        return {
+            'device_id': parsed.device_id,
+            'site_code': parsed.site_code,
+            'h_cd': parsed.h_cd,
+            's_cd': parsed.s_cd,
+            'dv_no': parsed.dv_no,
+            'check_time': parsed.check_time,
+            'o2': parsed.o2,
+            'no2': parsed.no2,
+            'co': parsed.co,
+            'co2': parsed.co2,
+            'h2s': parsed.h2s,
+            'ch4': parsed.ch4,
+            'ch2o': parsed.ch2o,
+            'o3': parsed.o3,
+            'voc': parsed.voc,
+            'pm1': parsed.pm1,
+            'pm25': parsed.pm25,
+            'pm10': parsed.pm10,
+            'temp': parsed.temp,
+            'humi': parsed.humi,
+        }
+
+    def _buffer_environment_data(self, parsed: ParsedEnvironmentData, topic: str, qos: int):
+        """환경 센서 데이터를 버퍼에 추가"""
+        data = {
+            'device_id': parsed.device_id,
+            'site_code': parsed.site_code,
+            'h_cd': parsed.h_cd,
+            's_cd': parsed.s_cd,
+            'dv_no': parsed.dv_no,
+            'check_time': parsed.check_time,
+            'topic': topic,
+            'qos': qos,
+            'o2': parsed.o2,
+            'no2': parsed.no2,
+            'co': parsed.co,
+            'co2': parsed.co2,
+            'h2s': parsed.h2s,
+            'ch4': parsed.ch4,
+            'ch2o': parsed.ch2o,
+            'o3': parsed.o3,
+            'voc': parsed.voc,
+            'pm1': parsed.pm1,
+            'pm25': parsed.pm25,
+            'pm10': parsed.pm10,
+            'temp': parsed.temp,
+            'humi': parsed.humi,
+        }
+
+        with self._buffer_lock:
+            self._data_buffer[parsed.device_id].append(data)
+            buffer_count = sum(len(v) for v in self._data_buffer.values())
+
+        logger.debug(f"버퍼 추가: {parsed.device_id} (총 버퍼: {buffer_count}건)")
+
     def _on_subscribe(self, client, userdata, mid, granted_qos):
         """구독 완료 콜백"""
         logger.debug(f"구독 완료 (mid={mid}, granted_qos={granted_qos})")
@@ -307,55 +571,14 @@ class MQTTClient:
 
     # ===== 유틸리티 메소드 =====
 
-    def _save_environment_data(
-        self,
-        parsed: ParsedEnvironmentData,
-        topic: str,
-        qos: int,
-        raw_payload: str
-    ):
-        """환경 센서 데이터를 데이터베이스에 저장"""
-        try:
-            db = get_db()
-
-            # 현장 정보 생성/업데이트
-            site = Site(
-                site_code=parsed.site_code,
-                h_cd=parsed.h_cd,
-                s_cd=parsed.s_cd
-            )
-            db.create_site(site)
-
-            # 장치 정보 생성/업데이트
-            device = Device(
-                device_id=parsed.device_id,
-                site_code=parsed.site_code,
-                dv_no=parsed.dv_no
-            )
-            db.create_device(device)
-
-            # 환경 데이터 저장
-            env_data = parsed.to_environment_data(qos)
-            db.save_environment_data(env_data)
-
-            logger.debug(
-                f"환경 데이터 저장: {parsed.device_id} "
-                f"(온도: {parsed.temp}, 습도: {parsed.humi}, CO2: {parsed.co2})"
-            )
-
-            # SocketIO로 실시간 전송
-            if self.socketio:
-                self._emit_environment_data(parsed, topic)
-
-        except Exception as e:
-            logger.error(f"환경 데이터 저장 오류: {e}")
-
     def _emit_environment_data(self, parsed: ParsedEnvironmentData, topic: str):
         """환경 데이터를 SocketIO로 전송"""
         if not self.socketio:
             return
 
-        # 센서 데이터를 개별적으로 전송
+        from datetime import datetime
+
+        # 브라우저 dashboard.js가 기대하는 평면 구조로 전송
         sensor_data = {
             'device_id': parsed.device_id,
             'site_code': parsed.site_code,
@@ -364,21 +587,30 @@ class MQTTClient:
             'dv_no': parsed.dv_no,
             'check_time': parsed.check_time,
             'topic': topic,
-            'sensors': {}
+            'received_at': datetime.now().isoformat(),
+            # 센서 값들을 직접 포함 (dashboard.js에서 data.o2, data.co2 등으로 접근)
+            'o2': parsed.o2,
+            'no2': parsed.no2,
+            'co': parsed.co,
+            'co2': parsed.co2,
+            'h2s': parsed.h2s,
+            'ch4': parsed.ch4,
+            'ch2o': parsed.ch2o,
+            'o3': parsed.o3,
+            'voc': parsed.voc,
+            'pm1': parsed.pm1,
+            'pm25': parsed.pm25,
+            'pm10': parsed.pm10,
+            'temp': parsed.temp,
+            'humi': parsed.humi,
         }
 
-        # 각 센서별 데이터 추가
-        for sensor_type, info in SENSOR_TYPES.items():
-            value = getattr(parsed, sensor_type, None)
-            if value is not None:
-                sensor_data['sensors'][sensor_type] = {
-                    'value': value,
-                    'unit': info['unit'],
-                    'name': info['name'],
-                    'name_en': info['name_en']
-                }
-
-        self.socketio.emit('environment_data', sensor_data)
+        # 백그라운드 스레드에서 SocketIO emit을 위해 namespace 명시
+        try:
+            self.socketio.emit('environment_data', sensor_data, namespace='/')
+            logger.debug(f"SocketIO 전송 완료: {parsed.device_id}")
+        except Exception as e:
+            logger.error(f"SocketIO emit 오류: {e}")
 
     def _save_alarm_data(
         self,
@@ -495,12 +727,23 @@ def get_mqtt_client() -> MQTTClient:
 def init_mqtt_client(app=None, socketio=None):
     """MQTT 클라이언트 초기화 및 시작"""
     from app.config import get_config
+    from app.mqtt.forwarder import init_mqtt_forwarder
+
     config = get_config()
 
     client = get_mqtt_client()
 
     if socketio:
         client.set_socketio(socketio)
+
+    # DB 저장 간격 설정
+    client.set_save_interval(config.MQTT_DATA_SAVE_INTERVAL)
+
+    # MQTT 포워더 초기화 (활성화된 경우)
+    forwarder = init_mqtt_forwarder()
+    if forwarder:
+        client.set_forwarder(forwarder)
+        logger.info("MQTT 포워딩 활성화됨")
 
     # 연결 및 구독
     client.start()

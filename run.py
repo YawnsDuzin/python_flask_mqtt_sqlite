@@ -22,7 +22,7 @@ if __name__ == '__main__':
 
     print(f"""
 ╔══════════════════════════════════════════════════════╗
-║        MQTT 센서 모니터링 시스템                      ║
+║        MQTT 센서 모니터링 시스템                        ║
 ╠══════════════════════════════════════════════════════╣
 ║  서버 주소: http://{host}:{port}
 ║  환경: {config_name}
@@ -35,6 +35,6 @@ if __name__ == '__main__':
         host=host,
         port=port,
         debug=debug,
-        use_reloader=debug,
+        use_reloader=False,  # MQTT 클라이언트 충돌 방지 (동일 client_id 문제)
         log_output=True
     )

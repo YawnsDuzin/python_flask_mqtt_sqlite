@@ -1,15 +1,15 @@
 {% extends "base.html" %}
 
-{% block title %}{{ device.device_no }} - 장치 상세{% endblock %}
+{% block title %}{{ device.device_id }} - 장치 상세{% endblock %}
 
 {% block content %}
 <div class="device-detail-page">
     <header class="page-header">
         <div class="breadcrumb">
             <a href="{{ url_for('main.devices_page') }}">장치 목록</a> &gt;
-            <span>{{ device.device_no }}</span>
+            <span>{{ device.device_id }}</span>
         </div>
-        <h1>{{ device.name or device.device_no }}</h1>
+        <h1>{{ device.name or device.device_id }}</h1>
     </header>
 
     <!-- 장치 정보 -->
@@ -18,8 +18,8 @@
             <h2>장치 정보</h2>
             <div class="info-grid">
                 <div class="info-item">
-                    <label>장치 번호 (dvNo)</label>
-                    <span>{{ device.device_no }}</span>
+                    <label>장치 ID</label>
+                    <span>{{ device.device_id }}</span>
                 </div>
                 <div class="info-item">
                     <label>현장 코드</label>

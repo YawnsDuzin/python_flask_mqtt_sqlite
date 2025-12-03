@@ -56,18 +56,19 @@ def devices_page():
     """장치 목록 페이지"""
     db = get_db()
     devices = db.get_all_devices()
-    return render_template('devices.html', devices=devices, sensor_types=SENSOR_TYPES)
+    sites = db.get_all_sites()  # 현장 목록 (장치 추가 시 선택용)
+    return render_template('devices.html', devices=devices, sites=sites, sensor_types=SENSOR_TYPES)
 
 
-@main_bp.route('/devices/<device_no>')
-def device_detail(device_no):
+@main_bp.route('/devices/<device_id>')
+def device_detail(device_id):
     """장치 상세 페이지"""
     db = get_db()
-    device = db.get_device(device_no)
+    device = db.get_device(device_id)
     if not device:
         return render_template('error.html', message='장치를 찾을 수 없습니다.'), 404
 
-    recent_data = db.get_environment_data(device_no=device_no, limit=100)
+    recent_data = db.get_environment_data(device_id=device_id, limit=100)
 
     return render_template(
         'device_detail.html',
@@ -169,9 +170,11 @@ def get_site(site_code):
 
     return api_response(True, {
         'site': {
+            'site_code': site.site_code,
             'h_cd': site.h_cd,
             's_cd': site.s_cd,
             'name': site.name,
+            'location': site.location,
             'description': site.description,
             'is_active': site.is_active,
             'created_at': site.created_at,
@@ -179,13 +182,122 @@ def get_site(site_code):
         },
         'devices': [
             {
-                'device_no': d.device_no,
+                'device_id': d.device_id,
                 'name': d.name,
                 'is_active': d.is_active
             }
             for d in devices
-        ]
+        ],
+        'device_count': len(devices)
     })
+
+
+@api_bp.route('/sites', methods=['POST'])
+def create_site():
+    """현장 생성 API"""
+    db = get_db()
+
+    data = request.get_json()
+    if not data:
+        return api_response(False, message='JSON 데이터가 필요합니다.', status_code=400)
+
+    h_cd = data.get('h_cd', '').strip()
+    s_cd = data.get('s_cd', '').strip()
+
+    if not h_cd or not s_cd:
+        return api_response(False, message='h_cd와 s_cd가 필요합니다.', status_code=400)
+
+    # 코드 형식 검증
+    if not h_cd.startswith('H') or len(h_cd) < 2:
+        return api_response(False, message='h_cd는 "H"로 시작하는 형식이어야 합니다. (예: H001)', status_code=400)
+
+    if not s_cd.startswith('S') or len(s_cd) < 2:
+        return api_response(False, message='s_cd는 "S"로 시작하는 형식이어야 합니다. (예: S0001)', status_code=400)
+
+    try:
+        site_id = db.create_site_manual(
+            h_cd=h_cd,
+            s_cd=s_cd,
+            name=data.get('name'),
+            location=data.get('location'),
+            description=data.get('description')
+        )
+        return api_response(True, {
+            'site_code': f"{h_cd}{s_cd}",
+            'id': site_id
+        }, message='현장이 생성되었습니다.', status_code=201)
+    except ValueError as e:
+        return api_response(False, message=str(e), status_code=409)
+    except Exception as e:
+        logger.error(f"현장 생성 오류: {e}")
+        return api_response(False, message='현장 생성 중 오류가 발생했습니다.', status_code=500)
+
+
+@api_bp.route('/sites/<site_code>', methods=['PUT'])
+def update_site(site_code):
+    """현장 정보 수정 API"""
+    db = get_db()
+
+    site = db.get_site(site_code)
+    if not site:
+        return api_response(False, message='현장을 찾을 수 없습니다.', status_code=404)
+
+    data = request.get_json()
+    if not data:
+        return api_response(False, message='JSON 데이터가 필요합니다.', status_code=400)
+
+    # 수정 가능한 필드만 추출
+    update_fields = {}
+    if 'name' in data:
+        update_fields['name'] = data['name']
+    if 'location' in data:
+        update_fields['location'] = data['location']
+    if 'description' in data:
+        update_fields['description'] = data['description']
+    if 'is_active' in data:
+        update_fields['is_active'] = bool(data['is_active'])
+
+    if not update_fields:
+        return api_response(False, message='수정할 필드가 없습니다.', status_code=400)
+
+    try:
+        success = db.update_site(site_code, **update_fields)
+        if success:
+            return api_response(True, message='현장 정보가 수정되었습니다.')
+        else:
+            return api_response(False, message='현장 정보 수정에 실패했습니다.', status_code=500)
+    except Exception as e:
+        logger.error(f"현장 수정 오류: {e}")
+        return api_response(False, message='현장 수정 중 오류가 발생했습니다.', status_code=500)
+
+
+@api_bp.route('/sites/<site_code>', methods=['DELETE'])
+def delete_site(site_code):
+    """현장 삭제 API (연결된 장치가 없는 경우만)"""
+    db = get_db()
+
+    site = db.get_site(site_code)
+    if not site:
+        return api_response(False, message='현장을 찾을 수 없습니다.', status_code=404)
+
+    # 연결된 장치 확인
+    device_count = db.get_site_device_count(site_code)
+    if device_count > 0:
+        return api_response(
+            False,
+            message=f'연결된 장치({device_count}개)가 있어 삭제할 수 없습니다. 먼저 장치를 삭제해주세요.',
+            status_code=409
+        )
+
+    try:
+        success = db.delete_site(site_code)
+        if success:
+            return api_response(True, message='현장이 삭제되었습니다.')
+        else:
+            return api_response(False, message='현장 삭제에 실패했습니다.', status_code=500)
+    except Exception as e:
+        logger.error(f"현장 삭제 오류: {e}")
+        return api_response(False, message='현장 삭제 중 오류가 발생했습니다.', status_code=500)
 
 
 # ===== 장치(Device) API =====
@@ -204,7 +316,7 @@ def get_devices():
     return api_response(True, {
         'devices': [
             {
-                'device_no': d.device_no,
+                'device_id': d.device_id,
                 'site_code': d.site_code,
                 'name': d.name,
                 'description': d.description,
@@ -217,19 +329,20 @@ def get_devices():
     })
 
 
-@api_bp.route('/devices/<device_no>')
-def get_device(device_no):
+@api_bp.route('/devices/<device_id>')
+def get_device(device_id):
     """특정 장치 정보 조회 API"""
     db = get_db()
-    device = db.get_device(device_no)
+    device = db.get_device(device_id)
 
     if not device:
         return api_response(False, message='장치를 찾을 수 없습니다.', status_code=404)
 
     return api_response(True, {
         'device': {
-            'device_no': device.device_no,
+            'device_id': device.device_id,
             'site_code': device.site_code,
+            'dv_no': device.dv_no,
             'name': device.name,
             'description': device.description,
             'is_active': device.is_active,
@@ -239,8 +352,97 @@ def get_device(device_no):
     })
 
 
-@api_bp.route('/devices/<device_no>/data')
-def get_device_data(device_no):
+@api_bp.route('/devices', methods=['POST'])
+def create_device():
+    """장치 생성 API"""
+    db = get_db()
+
+    data = request.get_json()
+    if not data:
+        return api_response(False, message='JSON 데이터가 필요합니다.', status_code=400)
+
+    site_code = data.get('site_code', '').strip()
+    dv_no = data.get('dv_no', '').strip()
+
+    if not site_code or not dv_no:
+        return api_response(False, message='site_code와 dv_no가 필요합니다.', status_code=400)
+
+    try:
+        device_id = db.create_device_manual(
+            site_code=site_code,
+            dv_no=dv_no,
+            name=data.get('name'),
+            description=data.get('description')
+        )
+        return api_response(True, {
+            'device_id': f"{site_code}_{dv_no}",
+            'id': device_id
+        }, message='장치가 생성되었습니다.', status_code=201)
+    except ValueError as e:
+        return api_response(False, message=str(e), status_code=409)
+    except Exception as e:
+        logger.error(f"장치 생성 오류: {e}")
+        return api_response(False, message='장치 생성 중 오류가 발생했습니다.', status_code=500)
+
+
+@api_bp.route('/devices/<device_id>', methods=['PUT'])
+def update_device(device_id):
+    """장치 정보 수정 API"""
+    db = get_db()
+
+    device = db.get_device(device_id)
+    if not device:
+        return api_response(False, message='장치를 찾을 수 없습니다.', status_code=404)
+
+    data = request.get_json()
+    if not data:
+        return api_response(False, message='JSON 데이터가 필요합니다.', status_code=400)
+
+    # 수정 가능한 필드만 추출
+    update_fields = {}
+    if 'name' in data:
+        update_fields['name'] = data['name']
+    if 'description' in data:
+        update_fields['description'] = data['description']
+    if 'is_active' in data:
+        update_fields['is_active'] = bool(data['is_active'])
+
+    if not update_fields:
+        return api_response(False, message='수정할 필드가 없습니다.', status_code=400)
+
+    try:
+        success = db.update_device(device_id, **update_fields)
+        if success:
+            return api_response(True, message='장치 정보가 수정되었습니다.')
+        else:
+            return api_response(False, message='장치 정보 수정에 실패했습니다.', status_code=500)
+    except Exception as e:
+        logger.error(f"장치 수정 오류: {e}")
+        return api_response(False, message='장치 수정 중 오류가 발생했습니다.', status_code=500)
+
+
+@api_bp.route('/devices/<device_id>', methods=['DELETE'])
+def delete_device(device_id):
+    """장치 삭제 API"""
+    db = get_db()
+
+    device = db.get_device(device_id)
+    if not device:
+        return api_response(False, message='장치를 찾을 수 없습니다.', status_code=404)
+
+    try:
+        success = db.delete_device(device_id)
+        if success:
+            return api_response(True, message='장치가 삭제되었습니다.')
+        else:
+            return api_response(False, message='장치 삭제에 실패했습니다.', status_code=500)
+    except Exception as e:
+        logger.error(f"장치 삭제 오류: {e}")
+        return api_response(False, message='장치 삭제 중 오류가 발생했습니다.', status_code=500)
+
+
+@api_bp.route('/devices/<device_id>/data')
+def get_device_data(device_id):
     """장치의 환경 데이터 조회 API"""
     db = get_db()
 
@@ -250,7 +452,7 @@ def get_device_data(device_no):
     end_time = request.args.get('end')
 
     data = db.get_environment_data(
-        device_no=device_no,
+        device_id=device_id,
         start_time=start_time,
         end_time=end_time,
         limit=limit,
@@ -258,11 +460,11 @@ def get_device_data(device_no):
     )
 
     return api_response(True, {
-        'device_no': device_no,
+        'device_id': device_id,
         'data': [
             {
                 'id': d.id,
-                'timestamp': d.timestamp,
+                'timestamp': d.check_time,
                 'o2': d.o2,
                 'no2': d.no2,
                 'co': d.co,
@@ -301,9 +503,9 @@ def get_latest_data():
         'data': [
             {
                 'id': d.id,
-                'device_no': d.device_no,
+                'device_id': d.device_id,
                 'site_code': d.site_code,
-                'timestamp': d.timestamp,
+                'timestamp': d.check_time,
                 'o2': d.o2,
                 'no2': d.no2,
                 'co': d.co,
@@ -348,10 +550,10 @@ def get_all_stats():
     stats = []
 
     for device in devices:
-        device_stats = db.get_device_stats(device.device_no)
+        device_stats = db.get_device_stats(device.device_id)
         if device_stats:
             stats.append({
-                'device_no': device.device_no,
+                'device_id': device.device_id,
                 'site_code': device.site_code,
                 'name': device.name,
                 'stats': device_stats
@@ -363,19 +565,19 @@ def get_all_stats():
     })
 
 
-@api_bp.route('/data/stats/<device_no>')
-def get_device_stats(device_no):
+@api_bp.route('/data/stats/<device_id>')
+def get_device_stats(device_id):
     """특정 장치 통계 조회 API"""
     db = get_db()
 
-    device = db.get_device(device_no)
+    device = db.get_device(device_id)
     if not device:
         return api_response(False, message='장치를 찾을 수 없습니다.', status_code=404)
 
-    stats = db.get_device_stats(device_no)
+    stats = db.get_device_stats(device_id)
 
     return api_response(True, {
-        'device_no': device_no,
+        'device_id': device_id,
         'stats': stats
     })
 
@@ -457,9 +659,9 @@ def get_alarm_thresholds():
     """알람 임계값 조회 API"""
     db = get_db()
     site_code = request.args.get('site')
-    device_no = request.args.get('device')
+    device_id = request.args.get('device')
 
-    thresholds = db.get_alarm_thresholds(site_code=site_code, device_no=device_no)
+    thresholds = db.get_alarm_thresholds(site_code=site_code, device_id=device_id)
 
     return api_response(True, {
         'thresholds': thresholds,
@@ -491,7 +693,7 @@ def set_alarm_threshold():
         min_value=min_value,
         max_value=max_value,
         site_code=data.get('site_code'),
-        device_no=data.get('device_no')
+        device_id=data.get('device_id')
     )
 
     if success:

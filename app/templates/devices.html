@@ -8,27 +8,32 @@
         <h1>장치 목록</h1>
         <div class="header-actions">
             <input type="text" id="search-input" placeholder="장치 검색..." class="search-input">
+            <button id="add-device-btn" class="btn btn-primary">+ 장치 추가</button>
         </div>
     </header>
 
     <div class="devices-grid" id="devices-grid">
         {% if devices %}
             {% for device in devices %}
-            <div class="device-card" data-device-no="{{ device.device_no }}" data-site-code="{{ device.site_code }}">
+            <div class="device-card" data-device-id="{{ device.device_id }}" data-site-code="{{ device.site_code }}">
                 <div class="device-card-header">
-                    <span class="device-no-badge">{{ device.device_no }}</span>
+                    <span class="device-no-badge">{{ device.device_id }}</span>
                     <span class="device-status {{ 'active' if device.is_active else 'inactive' }}">
                         {{ '활성' if device.is_active else '비활성' }}
                     </span>
                 </div>
                 <div class="device-card-body">
-                    <h3>{{ device.name or device.device_no }}</h3>
+                    <h3>{{ device.name or device.device_id }}</h3>
                     <p class="device-site">현장: {{ device.site_code }}</p>
                     <p class="device-description">{{ device.description or '설명 없음' }}</p>
                     <p class="device-created">등록: {{ device.created_at[:10] if device.created_at else '-' }}</p>
                 </div>
                 <div class="device-card-footer">
-                    <a href="{{ url_for('main.device_detail', device_no=device.device_no) }}" class="btn btn-small">상세 보기</a>
+                    <a href="{{ url_for('main.device_detail', device_id=device.device_id) }}" class="btn btn-small">상세 보기</a>
+                    <div class="btn-group">
+                        <button class="btn btn-small btn-outline edit-device-btn" data-device-id="{{ device.device_id }}">수정</button>
+                        <button class="btn btn-small btn-danger delete-device-btn" data-device-id="{{ device.device_id }}">삭제</button>
+                    </div>
                 </div>
             </div>
             {% endfor %}
@@ -38,28 +43,449 @@
     </div>
 </div>
 
+<!-- 장치 추가/수정 모달 -->
+<div id="device-modal" class="modal" style="display: none;">
+    <div class="modal-overlay"></div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="modal-title">장치 추가</h2>
+            <button class="modal-close">&times;</button>
+        </div>
+        <form id="device-form">
+            <input type="hidden" id="edit-device-id" value="">
+            <div class="form-group" id="site-code-group">
+                <label for="site_code">현장 *</label>
+                <select id="site_code" name="site_code" required>
+                    <option value="">현장을 선택하세요</option>
+                    {% for site in sites %}
+                    <option value="{{ site.site_code }}">{{ site.site_code }} - {{ site.name or '이름 없음' }}</option>
+                    {% endfor %}
+                </select>
+                <small>장치가 설치될 현장을 선택하세요</small>
+            </div>
+            <div class="form-group" id="dv-no-group">
+                <label for="dv_no">장치 번호 *</label>
+                <input type="text" id="dv_no" name="dv_no" placeholder="1" required pattern="[0-9A-Za-z]+" maxlength="10">
+                <small>현장 내 장치를 구분하는 번호 (예: 1, 2, A1)</small>
+            </div>
+            <div class="form-group">
+                <label for="device_name">장치 이름</label>
+                <input type="text" id="device_name" name="name" placeholder="장치 이름 입력" maxlength="100">
+            </div>
+            <div class="form-group">
+                <label for="device_description">설명</label>
+                <textarea id="device_description" name="description" placeholder="장치 설명 입력" rows="3" maxlength="500"></textarea>
+            </div>
+            <div class="form-group" id="is-active-group" style="display: none;">
+                <label>
+                    <input type="checkbox" id="is_active" name="is_active" checked>
+                    활성 상태
+                </label>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline modal-cancel">취소</button>
+                <button type="submit" class="btn btn-primary" id="submit-btn">추가</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 삭제 확인 모달 -->
+<div id="delete-modal" class="modal" style="display: none;">
+    <div class="modal-overlay"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <h2>장치 삭제</h2>
+            <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p>정말로 <strong id="delete-device-name"></strong> 장치를 삭제하시겠습니까?</p>
+            <p class="warning-text">이 작업은 되돌릴 수 없습니다.</p>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline modal-cancel">취소</button>
+            <button type="button" class="btn btn-danger" id="confirm-delete-btn">삭제</button>
+        </div>
+    </div>
+</div>
+
+<style>
+/* 모달 스타일 */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.modal-content {
+    position: relative;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.modal-content.modal-small {
+    max-width: 400px;
+}
+
+.modal-header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: #2c3e50;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #666;
+    padding: 0;
+    line-height: 1;
+}
+
+.modal-close:hover {
+    color: #333;
+}
+
+.modal-body {
+    padding: 1.5rem;
+}
+
+.modal-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #ddd;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+/* 폼 스타일 */
+#device-form {
+    padding: 1.5rem;
+}
+
+.form-group {
+    margin-bottom: 1rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.3rem;
+    font-weight: 500;
+    color: #333;
+}
+
+.form-group input[type="text"],
+.form-group textarea,
+.form-group select {
+    width: 100%;
+    padding: 0.6rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.95rem;
+}
+
+.form-group input:focus,
+.form-group textarea:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: #3498db;
+}
+
+.form-group small {
+    display: block;
+    margin-top: 0.25rem;
+    color: #666;
+    font-size: 0.8rem;
+}
+
+.form-group input[type="checkbox"] {
+    margin-right: 0.5rem;
+}
+
+/* 버튼 스타일 추가 */
+.btn-danger {
+    background-color: #e74c3c;
+    color: white;
+}
+
+.btn-danger:hover {
+    background-color: #c0392b;
+}
+
+.warning-text {
+    color: #e74c3c;
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+}
+
+/* 카드 푸터 버튼 정렬 */
+.device-card-footer {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.device-card-footer .btn-group {
+    display: flex;
+    gap: 0.5rem;
+}
+
+/* 알림 토스트 */
+.toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 1rem 1.5rem;
+    background: #2c3e50;
+    color: white;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    z-index: 2000;
+    animation: slideIn 0.3s ease-out;
+}
+
+.toast.success {
+    background: #27ae60;
+}
+
+.toast.error {
+    background: #e74c3c;
+}
+
+@keyframes fadeOut {
+    from { opacity: 1; transform: scale(1); }
+    to { opacity: 0; transform: scale(0.9); }
+}
+</style>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const searchInput = document.getElementById('search-input');
     const devicesGrid = document.getElementById('devices-grid');
     const deviceCards = devicesGrid.querySelectorAll('.device-card');
 
+    // 모달 요소
+    const deviceModal = document.getElementById('device-modal');
+    const deleteModal = document.getElementById('delete-modal');
+    const deviceForm = document.getElementById('device-form');
+    const modalTitle = document.getElementById('modal-title');
+    const submitBtn = document.getElementById('submit-btn');
+    const isActiveGroup = document.getElementById('is-active-group');
+    const siteCodeGroup = document.getElementById('site-code-group');
+    const dvNoGroup = document.getElementById('dv-no-group');
+
+    let currentDeleteDeviceId = null;
+
+    // 검색 기능
     function filterDevices() {
         const searchTerm = searchInput.value.toLowerCase();
-
         deviceCards.forEach(card => {
-            const deviceNo = card.dataset.deviceNo.toLowerCase();
+            const deviceId = card.dataset.deviceId.toLowerCase();
             const siteCode = card.dataset.siteCode.toLowerCase();
             const deviceName = card.querySelector('h3').textContent.toLowerCase();
-
-            const matches = deviceNo.includes(searchTerm) ||
+            const matches = deviceId.includes(searchTerm) ||
                           siteCode.includes(searchTerm) ||
                           deviceName.includes(searchTerm);
             card.style.display = matches ? 'block' : 'none';
         });
     }
-
     searchInput.addEventListener('input', filterDevices);
+
+    // 모달 열기/닫기
+    function openModal(modal) {
+        modal.style.display = 'flex';
+    }
+
+    function closeModal(modal) {
+        modal.style.display = 'none';
+    }
+
+    // 모달 닫기 이벤트
+    document.querySelectorAll('.modal-close, .modal-cancel, .modal-overlay').forEach(el => {
+        el.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal(this.closest('.modal'));
+            }
+        });
+    });
+
+    // 토스트 알림
+    function showToast(message, type = 'info') {
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        setTimeout(() => {
+            toast.style.animation = 'slideOut 0.3s ease-in forwards';
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+
+    // 장치 추가 버튼
+    document.getElementById('add-device-btn').addEventListener('click', function() {
+        // 등록된 현장이 없으면 경고
+        const siteSelect = document.getElementById('site_code');
+        if (siteSelect.options.length <= 1) {
+            showToast('등록된 현장이 없습니다. 먼저 현장을 추가해주세요.', 'error');
+            return;
+        }
+
+        modalTitle.textContent = '장치 추가';
+        submitBtn.textContent = '추가';
+        deviceForm.reset();
+        document.getElementById('edit-device-id').value = '';
+        document.getElementById('site_code').disabled = false;
+        document.getElementById('dv_no').disabled = false;
+        siteCodeGroup.style.display = 'block';
+        dvNoGroup.style.display = 'block';
+        isActiveGroup.style.display = 'none';
+        openModal(deviceModal);
+    });
+
+    // 장치 수정 버튼
+    document.querySelectorAll('.edit-device-btn').forEach(btn => {
+        btn.addEventListener('click', async function() {
+            const deviceId = this.dataset.deviceId;
+
+            try {
+                const response = await fetch(`/api/devices/${deviceId}`);
+                const result = await response.json();
+
+                if (result.success) {
+                    const device = result.data.device;
+                    modalTitle.textContent = '장치 수정';
+                    submitBtn.textContent = '수정';
+                    document.getElementById('edit-device-id').value = deviceId;
+                    document.getElementById('site_code').value = device.site_code;
+                    document.getElementById('site_code').disabled = true;
+                    document.getElementById('dv_no').value = device.dv_no;
+                    document.getElementById('dv_no').disabled = true;
+                    document.getElementById('device_name').value = device.name || '';
+                    document.getElementById('device_description').value = device.description || '';
+                    document.getElementById('is_active').checked = device.is_active;
+                    siteCodeGroup.style.display = 'block';
+                    dvNoGroup.style.display = 'block';
+                    isActiveGroup.style.display = 'block';
+                    openModal(deviceModal);
+                } else {
+                    showToast(result.message || '장치 정보를 불러올 수 없습니다.', 'error');
+                }
+            } catch (error) {
+                showToast('오류가 발생했습니다.', 'error');
+            }
+        });
+    });
+
+    // 장치 삭제 버튼
+    document.querySelectorAll('.delete-device-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            currentDeleteDeviceId = this.dataset.deviceId;
+            const card = this.closest('.device-card');
+            const deviceName = card.querySelector('h3').textContent;
+            document.getElementById('delete-device-name').textContent = deviceName;
+            openModal(deleteModal);
+        });
+    });
+
+    // 삭제 확인
+    document.getElementById('confirm-delete-btn').addEventListener('click', async function() {
+        if (!currentDeleteDeviceId) return;
+
+        try {
+            const response = await fetch(`/api/devices/${currentDeleteDeviceId}`, {
+                method: 'DELETE'
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                showToast('장치가 삭제되었습니다.', 'success');
+                closeModal(deleteModal);
+                // 카드 제거
+                const card = document.querySelector(`.device-card[data-device-id="${currentDeleteDeviceId}"]`);
+                if (card) {
+                    card.style.animation = 'fadeOut 0.3s ease-out forwards';
+                    setTimeout(() => card.remove(), 300);
+                }
+            } else {
+                showToast(result.message || '삭제에 실패했습니다.', 'error');
+            }
+        } catch (error) {
+            showToast('오류가 발생했습니다.', 'error');
+        }
+    });
+
+    // 폼 제출
+    deviceForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const editDeviceId = document.getElementById('edit-device-id').value;
+        const isEdit = !!editDeviceId;
+
+        const formData = {
+            site_code: document.getElementById('site_code').value,
+            dv_no: document.getElementById('dv_no').value.trim(),
+            name: document.getElementById('device_name').value.trim(),
+            description: document.getElementById('device_description').value.trim()
+        };
+
+        if (isEdit) {
+            formData.is_active = document.getElementById('is_active').checked;
+        }
+
+        try {
+            const url = isEdit ? `/api/devices/${editDeviceId}` : '/api/devices';
+            const method = isEdit ? 'PUT' : 'POST';
+
+            const response = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formData)
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                showToast(isEdit ? '장치 정보가 수정되었습니다.' : '장치가 추가되었습니다.', 'success');
+                closeModal(deviceModal);
+                // 페이지 새로고침
+                setTimeout(() => location.reload(), 500);
+            } else {
+                showToast(result.message || '작업에 실패했습니다.', 'error');
+            }
+        } catch (error) {
+            showToast('오류가 발생했습니다.', 'error');
+        }
+    });
 });
 </script>
 {% endblock %}

@@ -1,23 +1,24 @@
-# MQTT 멀티센서 데이터 수집/중계 웹 시스템
+# 지하/밀폐공간 환경 센서 MQTT 모니터링 시스템
 
-Python Flask 기반의 MQTT 센서 데이터 수집 및 중계 웹 애플리케이션입니다.
-IoT 센서에서 발행되는 데이터를 MQTT 브로커를 통해 수신하고, 파싱 후 SQLite에 저장하며,
-가공된 데이터를 다시 MQTT로 발행하는 시스템입니다.
+Python Flask 기반의 **지하 및 밀폐공간 환경 센서** 데이터 수집 및 모니터링 웹 애플리케이션입니다.
+가스 센서, 미세먼지 센서, 온습도 센서 등 **14종 환경 센서** 데이터를 MQTT 브로커를 통해 수신하고,
+파싱 후 SQLite에 저장하며, 실시간 대시보드와 알람 관리 기능을 제공합니다.
 
 ## 시스템 구조
 
 ```
-[IoT 센서들] → [MQTT Broker] → [Flask App] → [SQLite DB]
+[환경 센서들] → [MQTT Broker] → [Flask App] → [SQLite DB]
                     ↑                ↓
-              [가공 데이터 재발행] ← [데이터 파싱/처리]
+              [포워딩 브로커] ← [실시간 대시보드/알람]
 ```
 
 ## 주요 기능
 
-- **MQTT 수신**: 다중 토픽 구독, QoS 설정, 자동 재연결
-- **데이터 파싱**: 센서 타입별 파서 (온도, 습도, 진동)
-- **데이터 저장**: SQLite 데이터베이스, 자동 인덱싱
-- **MQTT 발행**: 가공/집계 데이터 재발행
+- **MQTT 수신**: 다중 토픽 구독 (`{site_code}/U`, `{site_code}/W/{sensor}`), QoS 설정, 자동 재연결
+- **14종 센서 지원**: O2, NO2, CO, CO2, H2S, CH4, CH2O, O3, PM1, PM2.5, PM10, 온도, 습도, VOC
+- **데이터 저장**: SQLite 데이터베이스, 현장/장치 관리
+- **알람 관리**: 센서별 임계값 설정, 4단계 알람 레벨
+- **MQTT 포워딩**: 수신 데이터를 다른 브로커로 전송 (설정 가능)
 - **웹 대시보드**: 실시간 모니터링, Socket.IO 기반
 
 ## 기술 스택
@@ -37,7 +38,11 @@ python_flask_mqtt_sqlite/
 │   ├── config.py           # 설정 관리
 │   ├── routes.py           # API 및 웹 라우트
 │   ├── mqtt/               # MQTT 클라이언트 모듈
+│   │   ├── client.py       # MQTT 클라이언트
+│   │   └── forwarder.py    # MQTT 포워더
 │   ├── parsers/            # 데이터 파서 모듈
+│   │   ├── environment.py  # 환경 센서 파서
+│   │   └── alarm.py        # 알람 파서
 │   ├── models/             # 데이터베이스 모델
 │   ├── templates/          # HTML 템플릿
 │   └── static/             # CSS, JavaScript
@@ -124,11 +129,16 @@ python scripts/mqtt_simulator.py --interval 2
 | Method | Endpoint | 설명 |
 |--------|----------|------|
 | GET | `/api/health` | 시스템 상태 확인 |
-| GET | `/api/sensors` | 센서 목록 조회 |
-| GET | `/api/sensors/<id>` | 센서 정보 조회 |
-| GET | `/api/sensors/<id>/data` | 센서 데이터 조회 |
+| GET | `/api/sites` | 현장 목록 조회 |
+| GET | `/api/devices` | 장치 목록 조회 |
+| GET | `/api/devices/<device_id>` | 장치 상세 조회 |
+| GET | `/api/devices/<device_id>/data` | 장치 센서 데이터 조회 |
 | GET | `/api/data/latest` | 최신 데이터 조회 |
+| GET | `/api/data/latest-by-device` | 장치별 최신 데이터 |
 | GET | `/api/data/stats` | 통계 데이터 조회 |
+| GET | `/api/alarms` | 알람 로그 조회 |
+| GET | `/api/alarms/unacknowledged` | 미확인 알람 조회 |
+| POST | `/api/alarms/<id>/acknowledge` | 알람 확인 처리 |
 | GET | `/api/mqtt/status` | MQTT 상태 조회 |
 | POST | `/api/mqtt/publish` | MQTT 메시지 발행 |
 
@@ -136,28 +146,54 @@ python scripts/mqtt_simulator.py --interval 2
 
 ### 수신 토픽 (Subscribe)
 ```
-sensors/{sensor_type}/{sensor_id}
-예: sensors/temperature/TEMP_001
-    sensors/humidity/HUM_001
-    sensors/vibration/VIB_001
+{site_code}/U           # 환경 데이터
+{site_code}/W/{sensor}  # 알람 데이터
+
+예: H001S0001/U         # H001S0001 현장 환경 데이터
+    H001S0001/W/O2      # 산소 알람
+    H001S0001/W/CO      # 일산화탄소 알람
 ```
 
-### 발행 토픽 (Publish)
+### 포워딩 토픽 (Publish - 포워딩 활성화 시)
 ```
-processed/{sensor_id}/{metric_type}
-예: processed/TEMP_001/average
-    processed/TEMP_001/status
+{prefix}/{original_topic}
+예: forwarded/H001S0001/U
 ```
 
 ## 센서 데이터 형식
 
+### 환경 데이터 (토픽: {site_code}/U)
 ```json
 {
-  "sensor_id": "TEMP_001",
-  "type": "temperature",
-  "value": 23.5,
-  "unit": "celsius",
-  "timestamp": "2025-01-15T10:30:00Z"
+  "hCd": "H001",
+  "sCd": "S0001",
+  "dvNo": "1",
+  "data1": "20.9",   // O2 (%)
+  "data2": "0.1",    // NO2 (ppm)
+  "data3": "5.0",    // CO (ppm)
+  "data4": "450",    // CO2 (ppm)
+  "data5": "0.5",    // H2S (ppm)
+  "data6": "0.0",    // CH4 (%LEL)
+  "data7": "0.02",   // CH2O (ppm)
+  "data8": "0.03",   // O3 (ppm)
+  "data9": "15",     // PM2.5 (μg/m³)
+  "data10": "25",    // PM10 (μg/m³)
+  "data11": "25.5",  // 온도 (°C)
+  "data12": "60",    // 습도 (%)
+  "data13": "0.1",   // VOC (ppm)
+  "data14": "10",    // PM1 (μg/m³)
+  "checkTime": "2025-01-15 10:30:00"
+}
+```
+
+### 알람 데이터 (토픽: {site_code}/W/{sensor})
+```json
+{
+  "dvNo": "1",
+  "value": "23.5",
+  "level": "2",      // 0:정상, 1:주의, 2:경고, 3:위험
+  "etc": "",
+  "time": "2025-01-15 10:30:00"
 }
 ```
 

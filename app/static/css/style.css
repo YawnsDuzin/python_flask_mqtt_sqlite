@@ -553,8 +553,8 @@ body {
 /* ===== 장치 카드 그리드 (환경 센서용) ===== */
 .device-cards-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 400px));
+    gap: 1rem;
 }
 
 .device-data-card {
@@ -566,11 +566,11 @@ body {
 }
 
 .device-data-card:hover {
-    transform: translateY(-3px);
+    transform: translateY(-2px);
 }
 
 .device-data-card .card-header {
-    padding: 1rem;
+    padding: 0.6rem 0.8rem;
     background-color: var(--dark-color);
     color: white;
     display: flex;
@@ -579,17 +579,17 @@ body {
 }
 
 .device-data-card .card-header h3 {
-    font-size: 1rem;
+    font-size: 0.9rem;
     font-weight: 500;
 }
 
 .device-data-card .card-body {
-    padding: 1rem;
+    padding: 0.6rem;
 }
 
 .device-timestamp {
-    margin-top: 0.5rem;
-    font-size: 0.8rem;
+    margin-top: 0.4rem;
+    font-size: 0.75rem;
     color: var(--text-light);
     text-align: center;
 }
@@ -597,28 +597,131 @@ body {
 /* ===== 환경 데이터 값 그리드 ===== */
 .env-values-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.8rem;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 0.5rem;
+}
+
+@media (max-width: 1200px) {
+    .env-values-grid {
+        grid-template-columns: repeat(5, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .env-values-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 480px) {
+    .env-values-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
 }
 
 .env-value-item {
     text-align: center;
-    padding: 0.5rem;
+    padding: 0.4rem;
     background-color: #f8f9fa;
     border-radius: 4px;
 }
 
 .env-value-item .label {
     display: block;
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     color: var(--text-light);
-    margin-bottom: 0.2rem;
+    margin-bottom: 0.15rem;
 }
 
 .env-value-item .value {
-    font-size: 1rem;
+    font-size: 0.85rem;
     font-weight: bold;
     color: var(--primary-color);
+}
+
+/* ===== 장치 카드 센서 그룹 레이아웃 (2열: 가스센서 | 미세먼지/환경) ===== */
+.device-sensor-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+}
+
+.device-sensor-column {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.device-sensor-group {
+    background: #f8f9fa;
+    border-radius: 4px;
+    padding: 0.5rem;
+}
+
+.device-sensor-group h4 {
+    font-size: 0.75rem;
+    color: var(--dark-color);
+    margin-bottom: 0.4rem;
+    padding-bottom: 0.25rem;
+    border-bottom: 2px solid var(--primary-color);
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.device-sensor-group h4 .group-icon {
+    font-size: 0.85rem;
+}
+
+.device-sensor-group.gas-group h4 {
+    border-bottom-color: #e74c3c;
+}
+
+.device-sensor-group.dust-group h4 {
+    border-bottom-color: #9b59b6;
+}
+
+.device-sensor-group.env-group h4 {
+    border-bottom-color: #3498db;
+}
+
+.device-sensor-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.device-sensor-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.2rem 0.4rem;
+    background: white;
+    border-radius: 3px;
+    font-size: 0.7rem;
+}
+
+.device-sensor-item .sensor-label {
+    color: var(--text-color);
+}
+
+.device-sensor-item .sensor-value {
+    font-weight: bold;
+    color: var(--primary-color);
+    font-size: 0.75rem;
+}
+
+.device-sensor-item .sensor-unit {
+    font-size: 0.65rem;
+    color: var(--text-light);
+    margin-left: 0.15rem;
+}
+
+/* 반응형: 작은 화면에서 1열 레이아웃 */
+@media (max-width: 400px) {
+    .device-sensor-layout {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* ===== 현장/장치 코드 배지 ===== */
@@ -1110,5 +1213,16 @@ body {
     to {
         transform: translateX(0);
         opacity: 1;
+    }
+}
+
+@keyframes slideOut {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(100%);
+        opacity: 0;
     }
 }
